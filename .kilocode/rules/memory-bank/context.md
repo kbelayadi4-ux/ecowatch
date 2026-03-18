@@ -1,87 +1,50 @@
-# Active Context: Next.js Starter Template
+# Active Context: EcoObs – Application de Signalement Environnemental
 
 ## Current State
 
-**Template Status**: ✅ Ready for development
+**App Status**: ✅ Fonctionnel – Interface agent + tableau de bord admin déployés
 
 The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. It's ready for AI-assisted expansion to build any type of application.
 
 ## Recently Completed
 
 - [x] Base Next.js 16 setup with App Router
-- [x] TypeScript configuration with strict mode
-- [x] Tailwind CSS 4 integration
-- [x] ESLint configuration
-- [x] Memory bank documentation
-- [x] Recipe system for common features
+- [x] TypeScript + Tailwind CSS 4
+- [x] **EcoObs app complète** – Application mobile-first de signalement environnemental
+  - Authentification par numéro de téléphone tunisien (sans +216)
+  - Rôles: agent (terrain) et admin (direction)
+  - Interface agent: bouton "Nouvelle Observation", formulaire complet, photo, historique, partage WhatsApp/Email
+  - Interface admin: tableau de bord avec graphiques (barres + camembert), liste filtrée, export Excel/CSV, QR code de partage
+  - Données stockées en localStorage (côté client, sans serveur)
+  - Design vert/blanc, gros boutons pour utilisation avec gants
 
 ## Current Structure
 
 | File/Directory | Purpose | Status |
 |----------------|---------|--------|
-| `src/app/page.tsx` | Home page | ✅ Ready |
-| `src/app/layout.tsx` | Root layout | ✅ Ready |
-| `src/app/globals.css` | Global styles | ✅ Ready |
-| `.kilocode/` | AI context & recipes | ✅ Ready |
+| `src/app/page.tsx` | Routeur principal (auth → agent/admin) | ✅ |
+| `src/app/layout.tsx` | Layout avec métadonnées PWA | ✅ |
+| `src/app/globals.css` | Styles globaux (boutons terrain, badges) | ✅ |
+| `src/lib/types.ts` | Types TypeScript + constantes (ADMIN_PHONES) | ✅ |
+| `src/lib/store.ts` | Gestion localStorage (observations, agents, session) | ✅ |
+| `src/components/AuthPage.tsx` | Page connexion par téléphone | ✅ |
+| `src/components/AgentApp.tsx` | Accueil agent terrain | ✅ |
+| `src/components/NouvelleObservation.tsx` | Formulaire de signalement | ✅ |
+| `src/components/MesSignalements.tsx` | Historique des observations de l'agent | ✅ |
+| `src/components/AdminApp.tsx` | Tableau de bord direction | ✅ |
+| `src/components/QRCodeCanvas.tsx` | Partage QR code | ✅ |
+| `public/manifest.json` | Manifest PWA | ✅ |
 
-## Current Focus
+## Configuration Admin
 
-The template is ready. Next steps depend on user requirements:
-
-1. What type of application to build
-2. What features are needed
-3. Design/branding preferences
-
-## Quick Start Guide
-
-### To add a new page:
-
-Create a file at `src/app/[route]/page.tsx`:
-```tsx
-export default function NewPage() {
-  return <div>New page content</div>;
-}
+Pour ajouter un numéro admin, modifier `ADMIN_PHONES` dans `src/lib/types.ts`:
+```ts
+export const ADMIN_PHONES = ["12345678", "87654321"]; // sans +216
 ```
-
-### To add components:
-
-Create `src/components/` directory and add components:
-```tsx
-// src/components/ui/Button.tsx
-export function Button({ children }: { children: React.ReactNode }) {
-  return <button className="px-4 py-2 bg-blue-600 text-white rounded">{children}</button>;
-}
-```
-
-### To add a database:
-
-Follow `.kilocode/recipes/add-database.md`
-
-### To add API routes:
-
-Create `src/app/api/[route]/route.ts`:
-```tsx
-import { NextResponse } from "next/server";
-
-export async function GET() {
-  return NextResponse.json({ message: "Hello" });
-}
-```
-
-## Available Recipes
-
-| Recipe | File | Use Case |
-|--------|------|----------|
-| Add Database | `.kilocode/recipes/add-database.md` | Data persistence with Drizzle + SQLite |
-
-## Pending Improvements
-
-- [ ] Add more recipes (auth, email, etc.)
-- [ ] Add example components
-- [ ] Add testing setup recipe
 
 ## Session History
 
 | Date | Changes |
 |------|---------|
 | Initial | Template created with base setup |
+| 2026-03-18 | Application EcoObs complète – agent + admin dashboard |
