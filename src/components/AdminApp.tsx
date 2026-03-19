@@ -59,9 +59,10 @@ export default function AdminApp({ agent, onLogout }: Props) {
   }, []);
 
   useEffect(() => {
+    // Chargement immédiat au montage (différé légèrement pour éviter le warning lint)
     const init = setTimeout(() => charger(), 0);
-    // Polling toutes les 3 secondes (filet de sécurité)
-    const interval = setInterval(() => charger(), 3000);
+    // Polling toutes les 2 secondes (plus réactif)
+    const interval = setInterval(() => charger(), 2000);
     return () => { clearTimeout(init); clearInterval(interval); };
   }, [charger]);
 
