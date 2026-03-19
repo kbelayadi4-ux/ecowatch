@@ -44,8 +44,7 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
   }, [agent.id]);
 
   const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("fr-TN", {
+    return new Date(iso).toLocaleString("fr-TN", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",

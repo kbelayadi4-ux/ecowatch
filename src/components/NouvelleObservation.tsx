@@ -9,8 +9,9 @@ import {
   CheckCircle,
   Image as ImageIcon,
   X,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
-import BoutonPartage from "./BoutonPartage";
 import {
   Agent,
   TypeProbleme,
@@ -19,7 +20,7 @@ import {
   LIBELLES_PROBLEMES,
   LIBELLES_ZONES,
 } from "@/lib/types";
-import { saveObservation, generateId } from "@/lib/store";
+import { saveObservation, generateId, compresserPhoto } from "@/lib/store";
 
 interface Props {
   agent: Agent;
@@ -39,33 +40,54 @@ const COULEUR_BADGE: Record<TypeProbleme, string> = {
   autre: "badge-gray",
 };
 
+const ICONE_PROBLEME: Record<TypeProbleme, string> = {
+  fuite_huile: "🛢️",
+  fuite_eau: "💧",
+  fuite_matiere: "⚗️",
+  dechet_mal_trie: "♻️",
+  chiffon_souille: "🧹",
+  epi_eparpille: "🦺",
+  site_mal_arrange: "🏭",
+  odeur_anormal: "💨",
+  autre: "⚠️",
+};
+
+type Etat = "formulaire" | "envoi" | "succes" | "erreur";
+
 export default function NouvelleObservation({ agent, onRetour, onSaved }: Props) {
   const [type, setType] = useState<TypeProbleme | null>(null);
   const [commentaire, setCommentaire] = useState("");
   const [zone, setZone] = useState<ZoneUsine | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [succes, setSucces] = useState(false);
+  const [etat, setEtat] = useState<Etat>("formulaire");
+  const [avertissement, setAvertissement] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [
-    TypeProbleme,
-    string,
-  ][];
+  const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][];
   const zones = Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][];
 
+  // ── Photo : lecture + compression automatique ────────────────
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result as string);
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      // Compression automatique avant stockage
+      const compresse = await compresserPhoto(base64, 800, 0.72);
+      setPhoto(compresse);
+    };
     reader.readAsDataURL(file);
   };
 
-  const handleEnvoyer = () => {
+  // ── Enregistrement ───────────────────────────────────────────
+  const handleEnvoyer = async () => {
     if (!type || !zone) return;
-    const id = generateId();
+    setEtat("envoi");
+    setAvertissement(null);
+
     const obs: Observation = {
-      id,
+      id: generateId(),
       agentId: agent.id,
       agentNom: agent.nom,
       agentTelephone: agent.telephone,
@@ -76,61 +98,103 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
       dateCreation: new Date().toISOString(),
       partage: false,
     };
-    saveObservation(obs);
-    setSucces(true);
+
+    const resultat = saveObservation(obs);
+
+    if (resultat.ok) {
+      if (resultat.erreur === "photo_ignoree") {
+        setAvertissement("Photo non sauvegardée (mémoire insuffisante) – observation enregistrée.");
+      }
+      setEtat("succes");
+    } else {
+      setEtat("erreur");
+    }
   };
 
-  const getTextePartage = () => {
-    if (!type || !zone) return "";
-    const date = new Date().toLocaleString("fr-TN");
-    return (
-      `🌿 EcoWatch – Signalement\n` +
-      `👤 Agent: ${agent.nom}\n` +
-      `📍 Zone: ${LIBELLES_ZONES[zone]}\n` +
-      `⚠️ Type: ${LIBELLES_PROBLEMES[type]}\n` +
-      (commentaire ? `💬 Note: ${commentaire}\n` : "") +
-      `📅 Date: ${date}`
-    );
+  const recommencer = () => {
+    setType(null);
+    setCommentaire("");
+    setZone(null);
+    setPhoto(null);
+    setEtat("formulaire");
+    setAvertissement(null);
   };
 
-  if (succes) {
+  // ── ÉCRAN : Envoi en cours ───────────────────────────────────
+  if (etat === "envoi") {
     return (
       <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6">
-        <div className="w-full max-w-sm text-center">
-          <CheckCircle className="w-20 h-20 text-green-600 mx-auto mb-4" strokeWidth={1.5} />
-          <h2 className="text-2xl font-black text-green-800 mb-2">
-            Observation enregistrée !
-          </h2>
-          <p className="text-gray-500 mb-8">
-            Votre signalement a bien été sauvegardé.
-          </p>
+        <Loader2 className="w-16 h-16 text-green-600 animate-spin mb-4" />
+        <p className="text-green-800 font-bold text-lg">Enregistrement…</p>
+      </div>
+    );
+  }
 
-          {/* Partager */}
-          <div className="bg-white rounded-2xl p-4 shadow mb-4">
-            <BoutonPartage
-              texte={getTextePartage()}
-              sujetEmail={`EcoWatch – Signalement ${type ? LIBELLES_PROBLEMES[type] : ""}`}
-            />
+  // ── ÉCRAN : Succès ───────────────────────────────────────────
+  if (etat === "succes") {
+    return (
+      <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6">
+        <div className="w-full max-w-sm">
+          {/* Animation succès */}
+          <div className="text-center mb-6">
+            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-14 h-14 text-green-600" strokeWidth={1.5} />
+            </div>
+            <h2 className="text-2xl font-black text-green-800 mb-1">
+              Signalement envoyé !
+            </h2>
+            <p className="text-gray-500 text-sm">
+              L&apos;administrateur a été notifié automatiquement.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
+          {/* Résumé de l'observation */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm mb-5 space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{type ? ICONE_PROBLEME[type] : "⚠️"}</span>
+              <div>
+                <p className="font-black text-gray-800">
+                  {type ? LIBELLES_PROBLEMES[type] : ""}
+                </p>
+                <p className="text-xs text-gray-500">
+                  📍 {zone ? LIBELLES_ZONES[zone] : ""} &nbsp;•&nbsp; {new Date().toLocaleString("fr-TN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+            </div>
+            {commentaire && (
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-xl p-2">
+                {commentaire}
+              </p>
+            )}
+            {photo && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={photo} alt="Photo" className="w-full max-h-28 object-cover rounded-xl" />
+            )}
+          </div>
+
+          {/* Avertissement si photo ignorée */}
+          {avertissement && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 flex gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-yellow-700">{avertissement}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="space-y-3">
             <button
-              className="btn-terrain btn-primary w-full"
-              onClick={onSaved}
+              className="btn-terrain btn-primary w-full text-lg"
+              style={{ minHeight: 72 }}
+              onClick={recommencer}
             >
-              Voir mes signalements
+              <Send className="w-6 h-6" />
+              Nouveau signalement
             </button>
             <button
               className="btn-terrain btn-secondary w-full"
-              onClick={() => {
-                setType(null);
-                setCommentaire("");
-                setZone(null);
-                setPhoto(null);
-                setSucces(false);
-              }}
+              onClick={onSaved}
             >
-              Nouvelle observation
+              Voir mes signalements
             </button>
           </div>
         </div>
@@ -138,6 +202,32 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     );
   }
 
+  // ── ÉCRAN : Erreur ───────────────────────────────────────────
+  if (etat === "erreur") {
+    return (
+      <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center px-6">
+        <div className="w-full max-w-sm text-center">
+          <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-black text-red-700 mb-2">
+            Échec de l&apos;enregistrement
+          </h2>
+          <p className="text-gray-600 text-sm mb-6">
+            La mémoire de l&apos;application est pleine. Essayez sans photo ou contactez l&apos;administrateur.
+          </p>
+          <div className="space-y-3">
+            <button className="btn-terrain btn-primary w-full" onClick={recommencer}>
+              Réessayer sans photo
+            </button>
+            <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>
+              Retour
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ÉCRAN : Formulaire ───────────────────────────────────────
   const peutEnvoyer = type !== null && zone !== null;
 
   return (
@@ -156,15 +246,13 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-5 space-y-6 pb-32">
+      <main className="flex-1 px-4 py-5 space-y-5 pb-32">
         {/* Type de problème */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">
             Type de problème <span className="text-red-500">*</span>
           </h3>
-          <p className="text-gray-500 text-xs mb-3">
-            Sélectionnez la catégorie la plus proche
-          </p>
+          <p className="text-gray-500 text-xs mb-3">Sélectionnez la catégorie</p>
           <div className="grid grid-cols-1 gap-2">
             {typesProblemes.map(([key, label]) => (
               <button
@@ -172,12 +260,13 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
                 className={`choix-card ${type === key ? "selected" : ""}`}
                 onClick={() => setType(key)}
               >
-                <span
-                  className={`badge ${COULEUR_BADGE[key]} mr-3`}
-                >
-                  {label.slice(0, 3).toUpperCase()}
-                </span>
-                {label}
+                <span className="text-xl mr-3">{ICONE_PROBLEME[key]}</span>
+                <span className="flex-1 text-left">{label}</span>
+                {type === key && (
+                  <span className="ml-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5 text-white" />
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -186,11 +275,9 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
         {/* Zone */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">
-            Zone / Localisation <span className="text-red-500">*</span>
+            Zone <span className="text-red-500">*</span>
           </h3>
-          <p className="text-gray-500 text-xs mb-3">
-            Où se trouve le problème ?
-          </p>
+          <p className="text-gray-500 text-xs mb-3">Où se trouve le problème ?</p>
           <div className="grid grid-cols-2 gap-2">
             {zones.map(([key, label]) => (
               <button
@@ -207,40 +294,29 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
 
         {/* Commentaire */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
-          <h3 className="font-black text-gray-800 text-base mb-1">
-            Commentaire
-          </h3>
-          <p className="text-gray-500 text-xs mb-3">
-            Décrivez brièvement le problème (facultatif)
-          </p>
+          <h3 className="font-black text-gray-800 text-base mb-1">Commentaire</h3>
+          <p className="text-gray-500 text-xs mb-3">Description courte (facultatif)</p>
           <textarea
             className="input-terrain resize-none"
             rows={3}
-            placeholder="Ex: Fuite visible sous la cuve n°3, huile sur le sol..."
+            placeholder="Ex: Fuite visible sous la cuve n°3…"
             value={commentaire}
             onChange={(e) => setCommentaire(e.target.value)}
             maxLength={300}
           />
-          <p className="text-right text-xs text-gray-400 mt-1">
-            {commentaire.length}/300
-          </p>
+          <p className="text-right text-xs text-gray-400 mt-1">{commentaire.length}/300</p>
         </section>
 
         {/* Photo */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">Photo</h3>
           <p className="text-gray-500 text-xs mb-3">
-            Prenez ou ajoutez une photo (facultatif)
+            Facultatif – compressée automatiquement
           </p>
-
           {photo ? (
             <div className="relative rounded-xl overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photo}
-                alt="Photo observation"
-                className="w-full object-cover max-h-56 rounded-xl"
-              />
+              <img src={photo} alt="Photo" className="w-full object-cover max-h-56 rounded-xl" />
               <button
                 onClick={() => setPhoto(null)}
                 className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 shadow-lg"
@@ -276,29 +352,24 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
               </button>
             </div>
           )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handlePhoto}
-          />
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
         </section>
       </main>
 
-      {/* Bouton flottant Envoyer */}
+      {/* Bouton flottant */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
         <button
-          className={`btn-terrain w-full ${peutEnvoyer ? "btn-primary" : "bg-gray-300 text-gray-500 cursor-not-allowed"}`}
+          className={`btn-terrain w-full text-lg ${peutEnvoyer ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+          style={{ minHeight: 68 }}
           disabled={!peutEnvoyer}
           onClick={handleEnvoyer}
         >
-          <Send className="w-5 h-5" />
-          Enregistrer l&apos;observation
+          <Send className="w-6 h-6" />
+          Envoyer le signalement
         </button>
         {!peutEnvoyer && (
-          <p className="text-center text-xs text-gray-400 mt-2">
-            Sélectionnez le type et la zone pour continuer
+          <p className="text-center text-xs text-gray-400 mt-1.5">
+            Choisissez le type et la zone pour continuer
           </p>
         )}
       </div>
