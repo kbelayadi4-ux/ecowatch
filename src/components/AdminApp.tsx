@@ -139,7 +139,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Observations");
-    XLSX.writeFile(wb, `EcoObs_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `EcoWatch_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const exporterCSV = () => {
@@ -158,7 +158,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `EcoObs_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `EcoWatch_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -196,7 +196,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
       <header className="bg-green-800 text-white px-5 py-4 shadow-lg">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
-            <p className="font-black text-xl leading-none">EcoObs Admin</p>
+            <p className="font-black text-xl leading-none">EcoWatch Admin</p>
             <p className="text-green-300 text-xs mt-0.5">
               Direction – {agent.nom} | {observations.length} observations totales
             </p>

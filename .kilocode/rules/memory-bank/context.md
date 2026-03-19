@@ -1,4 +1,4 @@
-# Active Context: EcoObs – Application de Signalement Environnemental
+# Active Context: EcoWatch – Application de Signalement Environnemental
 
 ## Current State
 
@@ -10,7 +10,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 
 - [x] Base Next.js 16 setup with App Router
 - [x] TypeScript + Tailwind CSS 4
-- [x] **EcoObs app complète** – Application mobile-first de signalement environnemental
+- [x] **EcoWatch app complète** – Application mobile-first de signalement environnemental
   - Authentification par numéro de téléphone tunisien (sans +216)
   - Rôles: agent (terrain) et admin (direction)
   - Interface agent: bouton "Nouvelle Observation", formulaire complet, photo, historique, partage WhatsApp/Email
@@ -47,4 +47,4 @@ export const ADMIN_PHONES = ["12345678", "87654321"]; // sans +216
 | Date | Changes |
 |------|---------|
 | Initial | Template created with base setup |
-| 2026-03-18 | Application EcoObs complète – agent + admin dashboard |
+| 2026-03-18 | Application EcoWatch complète – agent + admin dashboard |

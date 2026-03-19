@@ -64,7 +64,7 @@ export default function AuthPage({ onLogin }: Props) {
         <div className="bg-white rounded-full p-4 mb-4 shadow-lg">
           <Leaf className="w-12 h-12 text-green-700" strokeWidth={2} />
         </div>
-        <h1 className="text-3xl font-black text-white tracking-tight">EcoObs</h1>
+        <h1 className="text-3xl font-black text-white tracking-tight">EcoWatch</h1>
         <p className="text-green-200 text-sm mt-1 font-medium">
           Observations Environnementales
         </p>

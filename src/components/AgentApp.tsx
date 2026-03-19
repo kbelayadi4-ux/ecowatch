@@ -57,7 +57,7 @@ export default function AgentApp({ agent, onLogout }: Props) {
             <Leaf className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-black text-lg leading-none">EcoObs</p>
+            <p className="font-black text-lg leading-none">EcoWatch</p>
             <p className="text-green-200 text-xs">{agent.nom}</p>
           </div>
         </div>
@@ -103,7 +103,7 @@ export default function AgentApp({ agent, onLogout }: Props) {
 
       {/* Footer */}
       <footer className="text-center text-xs text-gray-400 pb-6">
-        Application gratuite – EcoObs v1.0
+        Application gratuite – EcoWatch v1.0
       </footer>
     </div>
   );

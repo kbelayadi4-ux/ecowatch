@@ -56,7 +56,7 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
 
   const getTextePartage = (obs: Observation) => {
     return (
-      `🌿 EcoObs – Signalement\n` +
+      `🌿 EcoWatch – Signalement\n` +
       `👤 Agent: ${obs.agentNom}\n` +
       `📍 Zone: ${LIBELLES_ZONES[obs.zone]}\n` +
       `⚠️ Type: ${LIBELLES_PROBLEMES[obs.typeProbleme]}\n` +
@@ -72,7 +72,7 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
 
   const partagerEmail = (obs: Observation) => {
     const sujet = encodeURIComponent(
-      `EcoObs – ${LIBELLES_PROBLEMES[obs.typeProbleme]} – ${LIBELLES_ZONES[obs.zone]}`
+      `EcoWatch – ${LIBELLES_PROBLEMES[obs.typeProbleme]} – ${LIBELLES_ZONES[obs.zone]}`
     );
     const corps = encodeURIComponent(getTextePartage(obs));
     window.open(`mailto:?subject=${sujet}&body=${corps}`, "_blank");

@@ -1,6 +1,6 @@
 {
-  "name": "EcoObs – Observations Terrain",
-  "short_name": "EcoObs",
+  "name": "EcoWatch – Observations Terrain",
+  "short_name": "EcoWatch",
   "description": "Application de signalement environnemental pour agents d'usine",
   "start_url": "/",
   "display": "standalone",

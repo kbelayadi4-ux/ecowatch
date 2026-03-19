@@ -86,7 +86,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     if (!type || !zone) return "";
     const date = new Date().toLocaleString("fr-TN");
     return (
-      `🌿 EcoObs – Signalement\n` +
+      `🌿 EcoWatch – Signalement\n` +
       `👤 Agent: ${agent.nom}\n` +
       `📍 Zone: ${LIBELLES_ZONES[zone]}\n` +
       `⚠️ Type: ${LIBELLES_PROBLEMES[type]}\n` +
@@ -101,7 +101,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   };
 
   const partagerEmail = () => {
-    const sujet = encodeURIComponent(`EcoObs – Signalement ${type ? LIBELLES_PROBLEMES[type] : ""}`);
+    const sujet = encodeURIComponent(`EcoWatch – Signalement ${type ? LIBELLES_PROBLEMES[type] : ""}`);
     const corps = encodeURIComponent(getTextePartage());
     window.open(`mailto:?subject=${sujet}&body=${corps}`, "_blank");
   };

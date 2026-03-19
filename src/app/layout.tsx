@@ -8,7 +8,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "EcoObs – Observations Terrain",
+  title: "EcoWatch – Observations Terrain",
   description: "Application de signalement environnemental pour agents d'usine",
   manifest: "/manifest.json",
 };
