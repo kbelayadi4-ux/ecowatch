@@ -9,8 +9,8 @@ import {
   CheckCircle,
   Image as ImageIcon,
   X,
-  Share2,
 } from "lucide-react";
+import BoutonPartage from "./BoutonPartage";
 import {
   Agent,
   TypeProbleme,
@@ -45,7 +45,6 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   const [zone, setZone] = useState<ZoneUsine | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [succes, setSucces] = useState(false);
-  const [obsId, setObsId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [
@@ -78,7 +77,6 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
       partage: false,
     };
     saveObservation(obs);
-    setObsId(id);
     setSucces(true);
   };
 
@@ -95,17 +93,6 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     );
   };
 
-  const partagerWhatsApp = () => {
-    const texte = encodeURIComponent(getTextePartage());
-    window.open(`https://wa.me/?text=${texte}`, "_blank");
-  };
-
-  const partagerEmail = () => {
-    const sujet = encodeURIComponent(`EcoWatch – Signalement ${type ? LIBELLES_PROBLEMES[type] : ""}`);
-    const corps = encodeURIComponent(getTextePartage());
-    window.open(`mailto:?subject=${sujet}&body=${corps}`, "_blank");
-  };
-
   if (succes) {
     return (
       <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6">
@@ -119,25 +106,11 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
           </p>
 
           {/* Partager */}
-          <div className="bg-white rounded-2xl p-4 shadow mb-4 text-left">
-            <p className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-              <Share2 className="w-5 h-5 text-green-600" />
-              Partager ce rapport
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                className="btn-terrain bg-green-500 text-white rounded-xl text-base"
-                onClick={partagerWhatsApp}
-              >
-                📱 WhatsApp
-              </button>
-              <button
-                className="btn-terrain bg-blue-600 text-white rounded-xl text-base"
-                onClick={partagerEmail}
-              >
-                📧 Email
-              </button>
-            </div>
+          <div className="bg-white rounded-2xl p-4 shadow mb-4">
+            <BoutonPartage
+              texte={getTextePartage()}
+              sujetEmail={`EcoWatch – Signalement ${type ? LIBELLES_PROBLEMES[type] : ""}`}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-3">
@@ -155,7 +128,6 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
                 setZone(null);
                 setPhoto(null);
                 setSucces(false);
-                setObsId(null);
               }}
             >
               Nouvelle observation

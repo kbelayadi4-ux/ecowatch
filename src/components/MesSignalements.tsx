@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import {
   ChevronLeft,
   PlusCircle,
-  Share2,
   Calendar,
   MapPin,
   MessageSquare,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import { Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme } from "@/lib/types";
 import { getObservationsByAgent } from "@/lib/store";
+import BoutonPartage from "./BoutonPartage";
 
 interface Props {
   agent: Agent;
@@ -63,19 +63,6 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
       (obs.commentaire ? `💬 Note: ${obs.commentaire}\n` : "") +
       `📅 Date: ${formatDate(obs.dateCreation)}`
     );
-  };
-
-  const partagerWhatsApp = (obs: Observation) => {
-    const texte = encodeURIComponent(getTextePartage(obs));
-    window.open(`https://wa.me/?text=${texte}`, "_blank");
-  };
-
-  const partagerEmail = (obs: Observation) => {
-    const sujet = encodeURIComponent(
-      `EcoWatch – ${LIBELLES_PROBLEMES[obs.typeProbleme]} – ${LIBELLES_ZONES[obs.zone]}`
-    );
-    const corps = encodeURIComponent(getTextePartage(obs));
-    window.open(`mailto:?subject=${sujet}&body=${corps}`, "_blank");
   };
 
   return (
@@ -168,21 +155,12 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
                 )}
 
                 {/* Actions partage */}
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={() => partagerWhatsApp(obs)}
-                    className="flex-1 btn-terrain text-sm py-3 bg-green-500 text-white rounded-xl"
-                    style={{ minHeight: 44 }}
-                  >
-                    📱 WhatsApp
-                  </button>
-                  <button
-                    onClick={() => partagerEmail(obs)}
-                    className="flex-1 btn-terrain text-sm py-3 bg-blue-600 text-white rounded-xl"
-                    style={{ minHeight: 44 }}
-                  >
-                    📧 Email
-                  </button>
+                <div className="mt-3">
+                  <BoutonPartage
+                    texte={getTextePartage(obs)}
+                    sujetEmail={`EcoWatch – ${LIBELLES_PROBLEMES[obs.typeProbleme]} – ${LIBELLES_ZONES[obs.zone]}`}
+                    compact
+                  />
                 </div>
               </div>
             ))}
