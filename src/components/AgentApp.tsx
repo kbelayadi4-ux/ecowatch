@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   PlusCircle,
   ClipboardList,
   LogOut,
   Leaf,
-  ChevronLeft,
 } from "lucide-react";
 import { Agent } from "@/lib/types";
 import { clearSession } from "@/lib/store";
