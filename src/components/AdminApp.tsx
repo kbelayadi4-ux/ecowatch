@@ -9,9 +9,10 @@ import {
   LogOut, Download, QrCode, Calendar, MapPin, User,
   Filter, X, Image as ImageIcon, BarChart2,
   PieChart as PieChartIcon, List, Bell, BellRing, CheckCheck,
+  PlusCircle, Send, Camera, CheckCircle,
 } from "lucide-react";
 import {
-  Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme,
+  Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
 } from "@/lib/types";
 import {
   getObservations, clearSession, getNotifs, getNotifsNonLues,
@@ -38,7 +39,7 @@ const ICONE: Record<string, string> = {
   chiffon_souille:"🧹", epi_eparpille:"🦺", site_mal_arrange:"🏭", odeur_anormal:"💨", autre:"⚠️",
 };
 
-type Onglet = "notifs" | "graphiques" | "liste" | "qr";
+type Onglet = "notifs" | "graphiques" | "liste" | "qr" | "ajouter";
 
 export default function AdminApp({ agent, onLogout }: Props) {
   const [observations, setObservations] = useState<Observation[]>([]);
@@ -48,8 +49,15 @@ export default function AdminApp({ agent, onLogout }: Props) {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [filtreZone, setFiltreZone] = useState("");
   const [filtreType, setFiltreType] = useState("");
-  // Toast pour nouvelle observation
   const [toast, setToast] = useState<Notif | null>(null);
+  
+  // Formulaire ajout manuel
+  const [formType, setFormType] = useState<TypeProbleme | null>(null);
+  const [formZone, setFormZone] = useState<ZoneUsine | null>(null);
+  const [formCommentaire, setFormCommentaire] = useState("");
+  const [formPhoto, setFormPhoto] = useState<string | null>(null);
+  const [formAgentNom, setFormAgentNom] = useState("");
+  const [formSucces, setFormSucces] = useState(false);
 
   // ── Rechargement des données ─────────────────────────────────
   const charger = useCallback(() => {
@@ -138,6 +146,51 @@ export default function AdminApp({ agent, onLogout }: Props) {
       avecPhoto: observations.filter((o) => o.photo).length,
     };
   }, [observations]);
+
+  // ── Ajout manuel ───────────────────────────────────────────────
+  const handleAjoutManuel = () => {
+    if (!formType || !formZone || !formAgentNom.trim()) return;
+    
+    const nouvelleObs: Observation = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      agentId: "admin-manuel",
+      agentNom: formAgentNom.trim(),
+      agentTelephone: "00000000",
+      typeProbleme: formType,
+      commentaire: formCommentaire.trim(),
+      zone: formZone,
+      photo: formPhoto || undefined,
+      dateCreation: new Date().toISOString(),
+      partage: false,
+    };
+    
+    const list = getObservations();
+    list.unshift(nouvelleObs);
+    localStorage.setItem("eco_observations", JSON.stringify(list));
+    
+    // Ajouter notification
+    const notifs = getNotifs();
+    notifs.unshift({
+      obsId: nouvelleObs.id,
+      agentNom: nouvelleObs.agentNom,
+      typeProbleme: nouvelleObs.typeProbleme,
+      zone: nouvelleObs.zone,
+      dateCreation: nouvelleObs.dateCreation,
+      lu: false,
+    });
+    localStorage.setItem("eco_notifs", JSON.stringify(notifs.slice(0, 50)));
+    
+    setFormSucces(true);
+    setTimeout(() => {
+      setFormSucces(false);
+      setFormType(null);
+      setFormZone(null);
+      setFormCommentaire("");
+      setFormPhoto(null);
+      setFormAgentNom("");
+      charger();
+    }, 2000);
+  };
 
   // ── Export ───────────────────────────────────────────────────
   const exporterExcel = () => {
@@ -243,11 +296,12 @@ export default function AdminApp({ agent, onLogout }: Props) {
 
       {/* ── Navigation ─────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-5xl mx-auto flex">
+        <div className="max-w-5xl mx-auto flex flex-wrap">
           {([
             { id: "notifs" as Onglet, label: "Alertes", icon: Bell, badge: nonLues },
             { id: "graphiques" as Onglet, label: "Stats", icon: BarChart2, badge: 0 },
             { id: "liste" as Onglet, label: "Liste", icon: List, badge: 0 },
+            { id: "ajouter" as Onglet, label: "Ajouter", icon: PlusCircle, badge: 0 },
             { id: "qr" as Onglet, label: "QR", icon: QrCode, badge: 0 },
           ] as const).map(({ id, label, icon: Icon, badge }) => (
             <button
@@ -498,6 +552,90 @@ export default function AdminApp({ agent, onLogout }: Props) {
 
         {/* ══ ONGLET QR ════════════════════════════════════════════ */}
         {onglet === "qr" && <QRCodeCanvas />}
+
+        {/* ══ ONGLET AJOUTER MANUEL ════════════════════════════════════ */}
+        {onglet === "ajouter" && (
+          <div className="space-y-5">
+            <h2 className="font-black text-gray-800 text-lg">Ajouter un signalement manuel</h2>
+            <p className="text-gray-500 text-sm">Enregistrez un signalement reçu par WhatsApp ou autre</p>
+
+            {/* Succès */}
+            {formSucces && (
+              <div className="bg-green-100 border border-green-300 rounded-2xl p-4 flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+                <p className="text-green-700 font-bold">Signalement ajouté avec succès !</p>
+              </div>
+            )}
+
+            {/* Nom de l'agent/signaleur */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Nom du signaleur *</label>
+              <input
+                className="input-terrain"
+                placeholder="Ex: Ahmed - Cuisine"
+                value={formAgentNom}
+                onChange={(e) => setFormAgentNom(e.target.value)}
+              />
+            </div>
+
+            {/* Type */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Type de problème *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][]).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`choix-card ${formType === key ? "selected" : ""}`}
+                    onClick={() => setFormType(key)}
+                  >
+                    <span className="text-xl mr-2">{ICONE[key]}</span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Zone */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Zone *</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][]).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`choix-card justify-center ${formZone === key ? "selected" : ""}`}
+                    onClick={() => setFormZone(key)}
+                  >
+                    <MapPin className="w-4 h-4 mr-1" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Commentaire */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Commentaire</label>
+              <textarea
+                className="input-terrain resize-none"
+                rows={3}
+                placeholder="Details du signalement..."
+                value={formCommentaire}
+                onChange={(e) => setFormCommentaire(e.target.value)}
+              />
+            </div>
+
+            {/* Bouton */}
+            <button
+              className={`btn-terrain w-full text-lg ${formType && formZone && formAgentNom.trim() ? "btn-primary" : "bg-gray-300 text-gray-500"}`}
+              style={{ minHeight: 60 }}
+              disabled={!formType || !formZone || !formAgentNom.trim()}
+              onClick={handleAjoutManuel}
+            >
+              <Send className="w-5 h-5" />
+              Enregistrer le signalement
+            </button>
+          </div>
+        )}
       </main>
 
       {/* Modal photo */}
