@@ -21,6 +21,7 @@ import {
   LIBELLES_ZONES,
 } from "@/lib/types";
 import { saveObservation, generateId, compresserPhoto } from "@/lib/store";
+import { createObservation } from "@/lib/data";
 
 interface Props {
   agent: Agent;
@@ -108,11 +109,11 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     obs.numeroSuivi = `EW-${obs.id.slice(-6).toUpperCase()}`;
     obs.historique = [{ date: obs.dateCreation, utilisateur: agent.nom, action: "Création", nouvelleValeur: "Nouvelle" }];
 
-    const resultat = saveObservation(obs);
+    const resultat = await createObservation(obs).then(() => ({ ok: true })).catch((e) => ({ ok: false, erreur: String(e) }));
 
       if (resultat.ok) {
         setNumeroSuivi(obs.numeroSuivi);
-        if (resultat.erreur === "photo_ignoree") {
+        if ("erreur" in resultat && resultat.erreur === "photo_ignoree") {
 
         setAvertissement("Photo non sauvegardée (mémoire insuffisante) – observation enregistrée.");
       }
