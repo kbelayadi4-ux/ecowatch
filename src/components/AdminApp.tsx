@@ -17,7 +17,7 @@ import {
 import { getObservations, clearSession, getNotifs, getNotifsNonLues,
   marquerToutLu, ECO_NEW_OBS_EVENT, Notif,
 } from "@/lib/store";
-import { fetchObservations } from "@/lib/data";
+import { fetchObservations, migrateLocalToSupabase } from "@/lib/data";
 
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
@@ -102,7 +102,17 @@ export default function AdminApp({ agent, onLogout }: Props) {
     };
   }, [charger]);
 
+  const [migrationResult, setMigrationResult] = useState<string | null>(null);
   const handleLogout = () => { clearSession(); onLogout(); };
+  const handleMigration = async () => {
+    try {
+      const r = await migrateLocalToSupabase();
+      setMigrationResult(`Total ${r.total}, importés ${r.imported}, ignorés ${r.skipped}, erreurs ${r.errors}`);
+      charger();
+    } catch (e) {
+      setMigrationResult(`Erreur: ${String(e)}`);
+    }
+  };
 
   const ouvrirNotifs = () => {
     setOnglet("notifs");
@@ -346,9 +356,11 @@ export default function AdminApp({ agent, onLogout }: Props) {
         {onglet === "notifs" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between mb-1">
-              <h2 className="font-black text-gray-800 text-base">
-                Signalements reçus
-              </h2>
+                <h2 className="font-black text-gray-800 text-base">
+                  Signalements reçus
+                </h2>
+                <button onClick={handleMigration} className="text-xs text-blue-600 font-semibold">Migrer localStorage</button>
+
               {notifs.some((n) => !n.lu) && (
                 <button
                   onClick={() => { marquerToutLu(); setNonLues(0); setNotifs(getNotifs()); }}

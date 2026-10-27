@@ -81,11 +81,27 @@ export async function updateObservation(id: string, patch: Partial<Observation>)
     if (error) throw error;
     return;
   }
-  // localStorage fallback
   const list = lsGet();
   const idx = list.findIndex((o) => o.id === id);
   if (idx >= 0) {
     list[idx] = { ...list[idx], ...patch };
     localStorage.setItem("eco_observations", JSON.stringify(list));
   }
+}
+
+export async function migrateLocalToSupabase(): Promise<{ total: number; imported: number; skipped: number; errors: number }> {
+  if (!supabase) throw new Error("Supabase non configuré");
+  const local = lsGet();
+  let imported = 0, skipped = 0, errors = 0;
+  for (const obs of local) {
+    const { data: existing } = await supabase.from("observations").select("id").eq("id", obs.id).maybeSingle();
+    if (existing) { skipped++; continue; }
+    try {
+      await createObservation(obs);
+      imported++;
+    } catch {
+      errors++;
+    }
+  }
+  return { total: local.length, imported, skipped, errors };
 }
