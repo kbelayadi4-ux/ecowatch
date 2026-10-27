@@ -8,7 +8,8 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 
 ## Recently Completed
 
-- [x] Base Next.js 16 setup with App Router
+- [x] Supabase scaffolding ajouté (client + schema.sql) — nécessite NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY
+- [ ] Migration complète localStorage→Supabase en attente de credentials
 - [x] TypeScript + Tailwind CSS 4
 - [x] **EcoWatch app complète** – Application mobile-first de signalement environnemental
   - Authentification par numéro de téléphone tunisien (sans +216)

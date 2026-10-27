@@ -1,4 +1,20 @@
-import { Observation, Agent } from "./types";
+import { Observation, Agent, StatutAnomalie, PrioriteAnomalie, HistoriqueEntree, CommentaireInterne } from "./types";
+
+function migrerObservation(o: any): Observation {
+  return {
+    ...o,
+    numeroSuivi: o.numeroSuivi || `EW-${String(o.id).slice(-6).toUpperCase()}`,
+    statut: o.statut || "nouvelle",
+    priorite: o.priorite || "moyenne",
+    commentaires: o.commentaires || [],
+    piecesJointes: o.piecesJointes || [],
+    historique: o.historique || [{ date: o.dateCreation, utilisateur: o.agentNom, action: "Création", nouvelleValeur: "Nouvelle" }],
+  };
+}
+
+function migrerList(list: any[]): Observation[] {
+  return list.map(migrerObservation);
+}
 
 const OBSERVATIONS_KEY = "eco_observations";
 const AGENTS_KEY = "eco_agents";
@@ -50,7 +66,7 @@ export function getObservations(): Observation[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(OBSERVATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return raw ? migrerList(JSON.parse(raw)) : [];
   } catch {
     return [];
   }

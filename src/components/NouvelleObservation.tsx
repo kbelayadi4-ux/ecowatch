@@ -61,6 +61,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   const [photo, setPhoto] = useState<string | null>(null);
   const [etat, setEtat] = useState<Etat>("formulaire");
   const [avertissement, setAvertissement] = useState<string | null>(null);
+  const [numeroSuivi, setNumeroSuivi] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][];
@@ -88,6 +89,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
 
     const obs: Observation = {
       id: generateId(),
+      numeroSuivi: "",
       agentId: agent.id,
       agentNom: agent.nom,
       agentTelephone: agent.telephone,
@@ -97,12 +99,21 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
       photo: photo || undefined,
       dateCreation: new Date().toISOString(),
       partage: false,
+      statut: "nouvelle",
+      priorite: "moyenne",
+      commentaires: [],
+      piecesJointes: [],
+      historique: [],
     };
+    obs.numeroSuivi = `EW-${obs.id.slice(-6).toUpperCase()}`;
+    obs.historique = [{ date: obs.dateCreation, utilisateur: agent.nom, action: "Création", nouvelleValeur: "Nouvelle" }];
 
     const resultat = saveObservation(obs);
 
-    if (resultat.ok) {
-      if (resultat.erreur === "photo_ignoree") {
+      if (resultat.ok) {
+        setNumeroSuivi(obs.numeroSuivi);
+        if (resultat.erreur === "photo_ignoree") {
+
         setAvertissement("Photo non sauvegardée (mémoire insuffisante) – observation enregistrée.");
       }
       setEtat("succes");
@@ -146,6 +157,11 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
             <p className="text-gray-500 text-sm">
               L&apos;administrateur a été notifié automatiquement.
             </p>
+            {numeroSuivi && (
+              <p className="text-green-800 font-black text-sm mt-2">
+                N° de suivi : {numeroSuivi}
+              </p>
+            )}
           </div>
 
           {/* Résumé de l'observation */}

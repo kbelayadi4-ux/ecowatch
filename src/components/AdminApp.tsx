@@ -153,6 +153,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
     
     const nouvelleObs: Observation = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      numeroSuivi: "",
       agentId: "admin-manuel",
       agentNom: formAgentNom.trim(),
       agentTelephone: "00000000",
@@ -162,7 +163,14 @@ export default function AdminApp({ agent, onLogout }: Props) {
       photo: formPhoto || undefined,
       dateCreation: new Date().toISOString(),
       partage: false,
+      statut: "nouvelle",
+      priorite: "moyenne",
+      commentaires: [],
+      piecesJointes: [],
+      historique: [],
     };
+    nouvelleObs.numeroSuivi = `EW-${nouvelleObs.id.slice(-6).toUpperCase()}`;
+    nouvelleObs.historique = [{ date: nouvelleObs.dateCreation, utilisateur: agent.nom, action: "Création manuelle", nouvelleValeur: "Nouvelle" }];
     
     const list = getObservations();
     list.unshift(nouvelleObs);
@@ -557,7 +565,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
         {onglet === "ajouter" && (
           <div className="space-y-5">
             <h2 className="font-black text-gray-800 text-lg">Ajouter un signalement manuel</h2>
-            <p className="text-gray-500 text-sm">Enregistrez un signalement reçu par WhatsApp ou autre</p>
+            <p className="text-gray-500 text-sm">Enregistrement manuel par l&apos;administrateur</p>
 
             {/* Succès */}
             {formSucces && (

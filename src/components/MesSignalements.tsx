@@ -9,10 +9,10 @@ import {
   MessageSquare,
   Image as ImageIcon,
   X,
+  CheckCircle,
 } from "lucide-react";
 import { Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme } from "@/lib/types";
 import { getObservationsByAgent } from "@/lib/store";
-import BoutonPartage from "./BoutonPartage";
 
 interface Props {
   agent: Agent;
@@ -153,13 +153,10 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
                   </button>
                 )}
 
-                {/* Actions partage */}
-                <div className="mt-3">
-                  <BoutonPartage
-                    texte={getTextePartage(obs)}
-                    sujetEmail={`EcoWatch – ${LIBELLES_PROBLEMES[obs.typeProbleme]} – ${LIBELLES_ZONES[obs.zone]}`}
-                    compact
-                  />
+                {/* Statut : transmis directement à l'admin */}
+                <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-green-700 bg-green-50 rounded-xl px-3 py-2">
+                  <CheckCircle className="w-4 h-4" />
+                  Envoyé directement à l&apos;administration
                 </div>
               </div>
             ))}
