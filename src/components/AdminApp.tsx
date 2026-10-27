@@ -14,10 +14,11 @@ import {
 import {
   Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
 } from "@/lib/types";
-import {
-  getObservations, clearSession, getNotifs, getNotifsNonLues,
+import { getObservations, clearSession, getNotifs, getNotifsNonLues,
   marquerToutLu, ECO_NEW_OBS_EVENT, Notif,
 } from "@/lib/store";
+import { fetchObservations } from "@/lib/data";
+
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
 
@@ -60,8 +61,13 @@ export default function AdminApp({ agent, onLogout }: Props) {
   const [formSucces, setFormSucces] = useState(false);
 
   // ── Rechargement des données ─────────────────────────────────
-  const charger = useCallback(() => {
-    setObservations(getObservations());
+  const charger = useCallback(async () => {
+    try {
+      const obs = await fetchObservations();
+      setObservations(obs);
+    } catch {
+      setObservations(getObservations());
+    }
     setNotifs(getNotifs());
     setNonLues(getNotifsNonLues());
   }, []);
