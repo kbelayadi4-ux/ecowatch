@@ -11,7 +11,7 @@ export default function QRCodeCanvas() {
   useEffect(() => {
     // Utilise l'URL complète de l'application déployée
     const id = setTimeout(() => {
-      setUrl(window.location.href.split("?")[0].replace(/\/$/, ""));
+      setUrl(window.location.origin);
     }, 0);
     return () => clearTimeout(id);
   }, []);
