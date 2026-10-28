@@ -59,7 +59,7 @@ drop policy if exists "obs_update_admin" on public.observations;
 drop policy if exists "profiles_read_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
 
--- Observations: agents read own? Admin read all. Here: authenticated read all (existing behavior), tighten to own-or-admin if desired.
+-- Observations: authenticated users can read; only admins can update status/priority
 create policy "obs_read" on public.observations
   for select to authenticated using (true);
 create policy "obs_insert" on public.observations
@@ -91,7 +91,8 @@ create trigger trg_prevent_role_change
   before update on public.profiles
   for each row execute function public.prevent_role_change();
 
--- Storage: private bucket
+-- Bucket: ensure private (update existing)
+update storage.buckets set public = false where id = 'ecowatch-photos';
 insert into storage.buckets (id, name, public) values ('ecowatch-photos','ecowatch-photos',false)
 on conflict (id) do nothing;
 
