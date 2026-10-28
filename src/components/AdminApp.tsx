@@ -210,6 +210,29 @@ export default function AdminApp({ agent, onLogout }: Props) {
   );
 
   // ── KPIs ─────────────────────────────────────────────────────
+  const kpisEtendus = useMemo(() => {
+    const now = new Date();
+    const in7 = new Date(now.getTime() + 7 * 86400000);
+    const nonCloturees = observations.filter((o) => o.statut !== "cloturee");
+    const enRetard = nonCloturees.filter((o) => o.echeance && new Date(o.echeance) < now).length;
+    const proches = nonCloturees.filter((o) => o.echeance && new Date(o.echeance) >= now && new Date(o.echeance) <= in7).length;
+    const cloturees = observations.filter((o) => o.statut === "cloturee").length;
+    const tauxCloture = observations.length ? Math.round((cloturees / observations.length) * 100) : 0;
+    let sumPrise = 0, countPrise = 0, sumResol = 0, countResol = 0;
+    observations.forEach((o) => {
+      const creation = new Date(o.dateCreation).getTime();
+      const firstTrait = (o.historique || []).find((h) => h.action === "Changement de statut" && h.nouvelleValeur && h.nouvelleValeur !== "nouvelle");
+      if (firstTrait) { sumPrise += new Date(firstTrait.date).getTime() - creation; countPrise++; }
+      if (o.statut === "cloturee") {
+        const clot = (o.historique || []).find((h) => h.action === "Changement de statut" && h.nouvelleValeur === "cloturee");
+        if (clot) { sumResol += new Date(clot.date).getTime() - creation; countResol++; }
+      }
+    });
+    const delaiPrise = countPrise ? Math.round(sumPrise / countPrise / 86400000 * 10) / 10 : null;
+    const delaiResol = countResol ? Math.round(sumResol / countResol / 86400000 * 10) / 10 : null;
+    return { enRetard, proches, cloturees, tauxCloture, delaiPrise, delaiResol };
+  }, [observations]);
+
   const kpis = useMemo(() => {
     const now = new Date();
     const todayStr = now.toDateString();
@@ -495,6 +518,20 @@ export default function AdminApp({ agent, onLogout }: Props) {
                 { label: "Aujourd'hui", val: kpis.aujourdhui, color: "bg-blue-100 text-blue-800" },
                 { label: "Cette semaine", val: kpis.semaine, color: "bg-orange-100 text-orange-800" },
                 { label: "Avec photo", val: kpis.avecPhoto, color: "bg-purple-100 text-purple-800" },
+              ].map(({ label, val, color }) => (
+                <div key={label} className={`rounded-2xl p-4 text-center ${color}`}>
+                  <p className="text-3xl font-black">{val}</p>
+                  <p className="text-xs font-semibold mt-1">{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { label: "En retard", val: kpisEtendus.enRetard, color: "bg-red-100 text-red-800" },
+                { label: "Échéances proches", val: kpisEtendus.proches, color: "bg-yellow-100 text-yellow-800" },
+                { label: "Taux clôture", val: `${kpisEtendus.tauxCloture}%`, color: "bg-emerald-100 text-emerald-800" },
+                { label: "Délai prise en charge (j)", val: kpisEtendus.delaiPrise ?? "—", color: "bg-blue-100 text-blue-800" },
+                { label: "Délai résolution (j)", val: kpisEtendus.delaiResol ?? "—", color: "bg-purple-100 text-purple-800" },
               ].map(({ label, val, color }) => (
                 <div key={label} className={`rounded-2xl p-4 text-center ${color}`}>
                   <p className="text-3xl font-black">{val}</p>
