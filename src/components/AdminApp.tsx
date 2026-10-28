@@ -157,6 +157,12 @@ export default function AdminApp({ agent, onLogout }: Props) {
   };
   const [migrationResult, setMigrationResult] = useState<string | null>(null);
   const handleLogout = () => { clearSession(); onLogout(); };
+  const exporterPDF = () => {
+    const rows = listeFiltree.map((o) => `<tr><td>${o.numeroSuivi}</td><td>${LIBELLES_PROBLEMES[o.typeProbleme]}</td><td>${LIBELLES_ZONES[o.zone]}</td><td>${LIBELLES_STATUTS[o.statut]}</td><td>${LIBELLES_PRIORITES[o.priorite]}</td><td>${o.responsable || "-"}</td><td>${o.echeance ? new Date(o.echeance).toLocaleDateString("fr-TN") : "-"}</td></tr>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport EcoWatch</title><style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:6px;font-size:12px}th{background:#16a34a;color:#fff}</style></head><body><h1>Rapport EcoWatch</h1><p>Période: ${listeFiltree.length} observation(s)</p><table><thead><tr><th>N°</th><th>Type</th><th>Zone</th><th>Statut</th><th>Priorité</th><th>Responsable</th><th>Échéance</th></tr></thead><tbody>${rows}</tbody></table><script>window.print()</script></body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); }
+  };
   const handleMigration = async () => {
     try {
       const r = await migrateLocalToSupabase();
@@ -572,8 +578,8 @@ export default function AdminApp({ agent, onLogout }: Props) {
                 <button onClick={exporterExcel} className="flex-1 btn-terrain bg-emerald-700 text-white rounded-xl text-sm" style={{ minHeight: 44 }}>
                   <Download className="w-4 h-4" /> Excel
                 </button>
-                <button onClick={exporterCSV} className="flex-1 btn-terrain bg-blue-700 text-white rounded-xl text-sm" style={{ minHeight: 44 }}>
-                  <Download className="w-4 h-4" /> CSV
+                <button onClick={exporterPDF} className="flex-1 btn-terrain bg-red-700 text-white rounded-xl text-sm" style={{ minHeight: 44 }}>
+                  <Download className="w-4 h-4" /> PDF
                 </button>
               </div>
             </div>
