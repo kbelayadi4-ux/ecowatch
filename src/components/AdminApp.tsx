@@ -13,11 +13,12 @@ import {
 } from "lucide-react";
 import {
   Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
+  StatutAnomalie, PrioriteAnomalie, LIBELLES_STATUTS, LIBELLES_PRIORITES,
 } from "@/lib/types";
 import { getObservations, clearSession, getNotifs, getNotifsNonLues,
   marquerToutLu, ECO_NEW_OBS_EVENT, Notif,
 } from "@/lib/store";
-import { fetchObservations, migrateLocalToSupabase } from "@/lib/data";
+import { fetchObservations, migrateLocalToSupabase, updateObservation } from "@/lib/data";
 
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
@@ -102,6 +103,58 @@ export default function AdminApp({ agent, onLogout }: Props) {
     };
   }, [charger]);
 
+  const [obsSelectionnee, setObsSelectionnee] = useState<Observation | null>(null);
+  const [traitStatut, setTraitStatut] = useState<StatutAnomalie>("nouvelle");
+  const [traitPriorite, setTraitPriorite] = useState<PrioriteAnomalie>("moyenne");
+  const [traitResponsable, setTraitResponsable] = useState("");
+  const [traitEcheance, setTraitEcheance] = useState("");
+  const [traitAnalyse, setTraitAnalyse] = useState("");
+  const [traitMesures, setTraitMesures] = useState("");
+  const [traitActions, setTraitActions] = useState("");
+  const [traitVerification, setTraitVerification] = useState("");
+  const [traitEnCours, setTraitEnCours] = useState(false);
+  const ouvrirTraitement = (obs: Observation) => {
+    setObsSelectionnee(obs);
+    setTraitStatut(obs.statut);
+    setTraitPriorite(obs.priorite);
+    setTraitResponsable(obs.responsable || "");
+    setTraitEcheance(obs.echeance ? obs.echeance.slice(0, 10) : "");
+    setTraitAnalyse(obs.analyseCause || "");
+    setTraitMesures(obs.mesuresImmediates || "");
+    setTraitActions(obs.actionsCorrectives || "");
+    setTraitVerification(obs.verificationEfficacite || "");
+  };
+
+  const sauverTraitement = async () => {
+    if (!obsSelectionnee) return;
+    setTraitEnCours(true);
+    const hist = [...(obsSelectionnee.historique || [])];
+    if (traitStatut !== obsSelectionnee.statut) {
+      hist.push({ date: new Date().toISOString(), utilisateur: agent.nom, action: "Changement de statut", ancienneValeur: obsSelectionnee.statut, nouvelleValeur: traitStatut });
+    }
+    if (traitPriorite !== obsSelectionnee.priorite) {
+      hist.push({ date: new Date().toISOString(), utilisateur: agent.nom, action: "Changement de priorité", ancienneValeur: obsSelectionnee.priorite, nouvelleValeur: traitPriorite });
+    }
+    try {
+      await updateObservation(obsSelectionnee.id, {
+        statut: traitStatut,
+        priorite: traitPriorite,
+        responsable: traitResponsable || undefined,
+        echeance: traitEcheance ? new Date(traitEcheance).toISOString() : undefined,
+        analyseCause: traitAnalyse || undefined,
+        mesuresImmediates: traitMesures || undefined,
+        actionsCorrectives: traitActions || undefined,
+        verificationEfficacite: traitVerification || undefined,
+        historique: hist,
+      });
+      setObsSelectionnee(null);
+      charger();
+    } catch (e) {
+      alert(`Erreur: ${String(e)}`);
+    } finally {
+      setTraitEnCours(false);
+    }
+  };
   const [migrationResult, setMigrationResult] = useState<string | null>(null);
   const handleLogout = () => { clearSession(); onLogout(); };
   const handleMigration = async () => {
@@ -502,8 +555,9 @@ export default function AdminApp({ agent, onLogout }: Props) {
                     className="ml-auto text-xs text-red-500 flex items-center gap-1">
                     <X className="w-3 h-3" /> Effacer
                   </button>
-                )}
-              </div>
+                     )}
+                   </div>
+
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <select className="input-terrain text-sm" style={{ minHeight: 44 }} value={filtreZone} onChange={(e) => setFiltreZone(e.target.value)}>
                   <option value="">Toutes les zones</option>
@@ -569,6 +623,13 @@ export default function AdminApp({ agent, onLogout }: Props) {
                         </p>
                       </button>
                     )}
+                    <button
+                      className="btn-terrain btn-secondary w-full text-sm mt-2"
+                      style={{ minHeight: 40 }}
+                      onClick={() => ouvrirTraitement(obs)}
+                    >
+                      Traiter
+                    </button>
                   </div>
                 ))}
               </div>
@@ -664,7 +725,31 @@ export default function AdminApp({ agent, onLogout }: Props) {
         )}
       </main>
 
-      {/* Modal photo */}
+      {/* Modal traitement */}
+      {obsSelectionnee && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setObsSelectionnee(null)}>
+          <div className="bg-white rounded-2xl p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-black text-gray-800 mb-3">Traitement — {obsSelectionnee.numeroSuivi}</h3>
+            <div className="space-y-3">
+              <select className="input-terrain text-sm" value={traitStatut} onChange={(e) => setTraitStatut(e.target.value as StatutAnomalie)}>
+                {Object.entries(LIBELLES_STATUTS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select className="input-terrain text-sm" value={traitPriorite} onChange={(e) => setTraitPriorite(e.target.value as PrioriteAnomalie)}>
+                {Object.entries(LIBELLES_PRIORITES).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <input className="input-terrain" placeholder="Responsable" value={traitResponsable} onChange={(e) => setTraitResponsable(e.target.value)} />
+              <input className="input-terrain" type="date" value={traitEcheance} onChange={(e) => setTraitEcheance(e.target.value)} />
+              <textarea className="input-terrain resize-none" rows={2} placeholder="Analyse de cause" value={traitAnalyse} onChange={(e) => setTraitAnalyse(e.target.value)} />
+              <textarea className="input-terrain resize-none" rows={2} placeholder="Mesures immédiates" value={traitMesures} onChange={(e) => setTraitMesures(e.target.value)} />
+              <textarea className="input-terrain resize-none" rows={2} placeholder="Actions correctives" value={traitActions} onChange={(e) => setTraitActions(e.target.value)} />
+              <textarea className="input-terrain resize-none" rows={2} placeholder="Vérification efficacité" value={traitVerification} onChange={(e) => setTraitVerification(e.target.value)} />
+              <button className="btn-terrain btn-primary w-full" onClick={sauverTraitement} disabled={traitEnCours}>
+                {traitEnCours ? "Enregistrement…" : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {photoPreview && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
