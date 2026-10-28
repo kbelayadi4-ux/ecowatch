@@ -75,7 +75,7 @@ on conflict (id) do nothing;
 drop policy if exists "photos_read" on storage.objects;
 drop policy if exists "photos_insert_auth" on storage.objects;
 create policy "photos_read" on storage.objects for select using (bucket_id='ecowatch-photos');
--- Trigger to prevent role escalation
+create policy "photos_insert_auth" on storage.objects for insert to authenticated with check (bucket_id='ecowatch-photos');
 create or replace function public.prevent_role_change()
 returns trigger as $$
 begin
