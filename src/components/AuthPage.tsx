@@ -67,7 +67,7 @@ export default function AuthPage({ onLogin }: Props) {
   const [erreur, setErreur] = useState("");
 
   // Code d'accès admin (modifiable ici)
-  const CODE_ADMIN = "eco2024";
+  const CODE_ADMIN = process.env.NEXT_PUBLIC_ADMIN_CODE || "";
 
   const reset = () => {
     setTelephone("");
