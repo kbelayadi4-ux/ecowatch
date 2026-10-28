@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   getAgentByPhone,
   saveAgent,
   saveSession,
   generateId,
 } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { Agent } from "@/lib/types";
 import {
   Phone,
@@ -33,6 +34,31 @@ type Ecran =
 
 export default function AuthPage({ onLogin }: Props) {
   const [ecran, setEcran] = useState<Ecran>("accueil");
+  // Restauration de session Supabase si disponible
+  useEffect(() => {
+    const client = supabase;
+    if (!client) return;
+    client.auth.getSession().then(async ({ data }) => {
+      if (data.session?.user) {
+        const { data: profile } = await client
+          .from("profiles")
+          .select("nom, role, telephone")
+          .eq("id", data.session.user.id)
+          .maybeSingle();
+        if (profile) {
+          const agent: Agent = {
+            id: data.session.user.id,
+            telephone: profile.telephone || "",
+            nom: profile.nom || "",
+            role: profile.role === "admin" ? "admin" : "agent",
+          };
+          saveSession(agent);
+          onLogin(agent);
+        }
+      }
+    });
+  }, [onLogin]);
+
   const [roleChoisi, setRoleChoisi] = useState<"agent" | "admin">("agent");
   const [telephone, setTelephone] = useState("");
   const [nom, setNom] = useState("");
