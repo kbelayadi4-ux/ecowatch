@@ -16,6 +16,7 @@ create table if not exists public.observations (
   id text primary key,
   numero_suivi text unique not null,
   agent_id text not null,
+  owner_id uuid references auth.users(id),
   agent_nom text not null,
   agent_telephone text not null,
   type_probleme text not null,
