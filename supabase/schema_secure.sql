@@ -62,7 +62,7 @@ drop policy if exists "profiles_update_own" on public.profiles;
 
 -- Observations: owner or admin can read; insert only own; update admin only
 create policy "obs_read" on public.observations
-  for select to authenticated using (owner_id = auth.uid() or public.is_admin(auth.uid()) or owner_id is null);
+  for select to authenticated using (owner_id = auth.uid() or public.is_admin(auth.uid()));
 create policy "obs_insert" on public.observations
   for insert to authenticated with check (owner_id = auth.uid());
 create policy "obs_update_admin" on public.observations
