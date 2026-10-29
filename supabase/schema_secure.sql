@@ -60,11 +60,11 @@ drop policy if exists "obs_update_admin" on public.observations;
 drop policy if exists "profiles_read_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
 
--- Observations: authenticated users can read; only admins can update status/priority
+-- Observations: owner or admin can read; insert only own; update admin only
 create policy "obs_read" on public.observations
-  for select to authenticated using (true);
+  for select to authenticated using (owner_id = auth.uid() or public.is_admin(auth.uid()) or owner_id is null);
 create policy "obs_insert" on public.observations
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (owner_id = auth.uid());
 create policy "obs_update_admin" on public.observations
   for update to authenticated using (public.is_admin(auth.uid()));
 -- No delete policy (deny by default).
