@@ -44,6 +44,7 @@ export interface Observation {
   id: string;
   numeroSuivi: string;
   agentId: string;
+  ownerId?: string; // Supabase Auth user id (when available)
   agentNom: string;
   agentTelephone: string;
   typeProbleme: TypeProbleme;
