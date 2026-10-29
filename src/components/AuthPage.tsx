@@ -80,12 +80,31 @@ export default function AuthPage({ onLogin }: Props) {
   const normaliser = (tel: string) =>
     tel.replace(/\s/g, "").replace(/^216/, "");
 
-  // ── CONNEXION ─────────────────────────────────────────────
-  const handleConnexion = () => {
+  const handleConnexion = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
       setErreur("Numéro invalide (8 chiffres minimum)");
       return;
+    }
+    if (supabase) {
+      try {
+        const email = `${tel}@ecowatch.local`;
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: "ecowatch-" + tel });
+        if (error || !data.user) { setErreur("Compte introuvable. Vérifiez votre numéro ou créez un compte."); return; }
+        const { data: profile } = await supabase.from("profiles").select("nom, role, telephone").eq("id", data.user.id).maybeSingle();
+        if (!profile) { setErreur("Profil introuvable."); return; }
+        if (profile.role !== roleChoisi) {
+          setErreur(roleChoisi === "admin" ? "Ce numéro n'est pas un compte administrateur." : "Ce numéro est enregistré en tant qu'administrateur.");
+          return;
+        }
+        const agent: Agent = { id: data.user.id, telephone: profile.telephone || tel, nom: profile.nom || "", role: profile.role === "admin" ? "admin" : "agent" };
+        saveSession(agent);
+        onLogin(agent);
+        return;
+      } catch (e) {
+        setErreur(String(e));
+        return;
+      }
     }
     const agent = getAgentByPhone(tel);
     if (!agent) {
@@ -104,8 +123,7 @@ export default function AuthPage({ onLogin }: Props) {
     onLogin(agent);
   };
 
-  // ── INSCRIPTION ───────────────────────────────────────────
-  const handleInscription = () => {
+  const handleInscription = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
       setErreur("Numéro invalide (8 chiffres minimum)");
@@ -115,9 +133,30 @@ export default function AuthPage({ onLogin }: Props) {
       setErreur("Entrez votre nom complet (minimum 2 caractères)");
       return;
     }
-    if (roleChoisi === "admin" && codeAdmin !== CODE_ADMIN) {
+    if (roleChoisi === "admin" && codeAdmin !== (process.env.NEXT_PUBLIC_ADMIN_CODE || "")) {
       setErreur("Code d'accès administrateur incorrect.");
       return;
+    }
+    if (supabase) {
+      try {
+        const email = `${tel}@ecowatch.local`;
+        const { data, error } = await supabase.auth.signUp({ email, password: "ecowatch-" + tel });
+        if (error || !data.user) { setErreur("Inscription impossible."); return; }
+        const { error: pErr } = await supabase.from("profiles").insert({
+          id: data.user.id,
+          nom: nom.trim(),
+          telephone: tel,
+          role: roleChoisi === "admin" ? "admin" : "agent",
+        });
+        if (pErr) { setErreur("Profil non créé."); return; }
+        const agent: Agent = { id: data.user.id, telephone: tel, nom: nom.trim(), role: roleChoisi };
+        saveSession(agent);
+        onLogin(agent);
+        return;
+      } catch (e) {
+        setErreur(String(e));
+        return;
+      }
     }
     const existant = getAgentByPhone(tel);
     if (existant) {
