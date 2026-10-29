@@ -22,6 +22,7 @@ import {
 } from "@/lib/types";
 import { saveObservation, generateId, compresserPhoto } from "@/lib/store";
 import { createObservation } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 
 interface Props {
   agent: Agent;
@@ -88,10 +89,18 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     setEtat("envoi");
     setAvertissement(null);
 
+    // ownerId depuis session Supabase si disponible
+    let ownerId: string | undefined;
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      ownerId = data.session?.user?.id;
+    }
+
     const obs: Observation = {
       id: generateId(),
       numeroSuivi: "",
       agentId: agent.id,
+      ownerId,
       agentNom: agent.nom,
       agentTelephone: agent.telephone,
       typeProbleme: type,
