@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import {
-  getAgentByPhone,
-  saveAgent,
-  saveSession,
-  generateId,
-} from "@/lib/store";
+import { saveSession } from "@/lib/store";
+import { generateId } from "@/lib/store";
+import { getAgentByPhone, saveAgent } from "@/lib/auth";
 import { Agent } from "@/lib/types";
 import {
   Phone,
@@ -55,13 +52,13 @@ export default function AuthPage({ onLogin }: Props) {
     tel.replace(/\s/g, "").replace(/^216/, "");
 
   // ── CONNEXION ─────────────────────────────────────────────
-  const handleConnexion = () => {
+  const handleConnexion = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
       setErreur("Numéro invalide (8 chiffres minimum)");
       return;
     }
-    const agent = getAgentByPhone(tel);
+    const agent = await getAgentByPhone(tel);
     if (!agent) {
       setErreur("Compte introuvable. Vérifiez votre numéro ou créez un compte.");
       return;
@@ -79,7 +76,7 @@ export default function AuthPage({ onLogin }: Props) {
   };
 
   // ── INSCRIPTION ───────────────────────────────────────────
-  const handleInscription = () => {
+  const handleInscription = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
       setErreur("Numéro invalide (8 chiffres minimum)");
@@ -93,7 +90,7 @@ export default function AuthPage({ onLogin }: Props) {
       setErreur("Code d'accès administrateur incorrect.");
       return;
     }
-    const existant = getAgentByPhone(tel);
+    const existant = await getAgentByPhone(tel);
     if (existant) {
       setErreur("Un compte existe déjà avec ce numéro. Connectez-vous.");
       return;
@@ -104,7 +101,7 @@ export default function AuthPage({ onLogin }: Props) {
       nom: nom.trim(),
       role: roleChoisi,
     };
-    saveAgent(agent);
+    await saveAgent(agent);
     saveSession(agent);
     onLogin(agent);
   };

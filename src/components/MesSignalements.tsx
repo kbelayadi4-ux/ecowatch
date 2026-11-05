@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme } from "@/lib/types";
-import { getObservationsByAgent } from "@/lib/store";
+import { getObservationsByAgent } from "@/lib/data";
 import BoutonPartage from "./BoutonPartage";
 
 interface Props {
@@ -37,8 +37,8 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      setObservations(getObservationsByAgent(agent.id));
+    const id = setTimeout(async () => {
+      setObservations(await getObservationsByAgent(agent.id));
     }, 0);
     return () => clearTimeout(id);
   }, [agent.id]);

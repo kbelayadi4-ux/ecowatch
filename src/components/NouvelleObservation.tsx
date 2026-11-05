@@ -20,7 +20,8 @@ import {
   LIBELLES_PROBLEMES,
   LIBELLES_ZONES,
 } from "@/lib/types";
-import { saveObservation, generateId, compresserPhoto } from "@/lib/store";
+import { generateId, compresserPhoto } from "@/lib/store";
+import { saveObservation } from "@/lib/data";
 
 interface Props {
   agent: Agent;
@@ -99,7 +100,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
       partage: false,
     };
 
-    const resultat = saveObservation(obs);
+    const resultat = await saveObservation(obs);
 
     if (resultat.ok) {
       if (resultat.erreur === "photo_ignoree") {
