@@ -14,10 +14,9 @@ import {
 import {
   Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
 } from "@/lib/types";
-import {
-  getObservations, clearSession, getNotifs, getNotifsNonLues,
-  marquerToutLu, ECO_NEW_OBS_EVENT, Notif,
-} from "@/lib/store";
+import { clearSession } from "@/lib/store";
+import { getObservations, getNotifs, getNotifsNonLues, marquerToutLu } from "@/lib/data";
+import type { Notif } from "@/lib/store";
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
 
@@ -60,17 +59,19 @@ export default function AdminApp({ agent, onLogout }: Props) {
   const [formSucces, setFormSucces] = useState(false);
 
   // ── Rechargement des données ─────────────────────────────────
-  const charger = useCallback(() => {
-    setObservations(getObservations());
-    setNotifs(getNotifs());
-    setNonLues(getNotifsNonLues());
+  const charger = useCallback(async () => {
+    const obs = await getObservations();
+    const ns = await getNotifs();
+    const nl = await getNotifsNonLues();
+    setObservations(obs);
+    setNotifs(ns as any);
+    setNonLues(nl);
   }, []);
 
   useEffect(() => {
     // Chargement immédiat au montage (différé légèrement pour éviter le warning lint)
-    const init = setTimeout(() => charger(), 0);
-    // Polling toutes les 2 secondes (plus réactif)
-    const interval = setInterval(() => charger(), 2000);
+    const init = setTimeout(() => { charger(); }, 0);
+    const interval = setInterval(() => { charger(); }, 3000);
     return () => { clearTimeout(init); clearInterval(interval); };
   }, [charger]);
 
@@ -84,14 +85,14 @@ export default function AdminApp({ agent, onLogout }: Props) {
       setTimeout(() => setToast(null), 4000);
     };
     // Même onglet
-    window.addEventListener(ECO_NEW_OBS_EVENT, handleNewObs);
+    // no local events; Supabase polling handles sync
     // Autres onglets (storage event)
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "eco_observations" || e.key === "eco_notifs") charger();
     };
     window.addEventListener("storage", handleStorage);
     return () => {
-      window.removeEventListener(ECO_NEW_OBS_EVENT, handleNewObs);
+      // noop
       window.removeEventListener("storage", handleStorage);
     };
   }, [charger]);
@@ -164,21 +165,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
       partage: false,
     };
     
-    const list = getObservations();
-    list.unshift(nouvelleObs);
-    localStorage.setItem("eco_observations", JSON.stringify(list));
-    
-    // Ajouter notification
-    const notifs = getNotifs();
-    notifs.unshift({
-      obsId: nouvelleObs.id,
-      agentNom: nouvelleObs.agentNom,
-      typeProbleme: nouvelleObs.typeProbleme,
-      zone: nouvelleObs.zone,
-      dateCreation: nouvelleObs.dateCreation,
-      lu: false,
-    });
-    localStorage.setItem("eco_notifs", JSON.stringify(notifs.slice(0, 50)));
+    import("@/lib/data").then(({ saveObservation }) => saveObservation(nouvelleObs));
     
     setFormSucces(true);
     setTimeout(() => {
@@ -337,7 +324,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
               </h2>
               {notifs.some((n) => !n.lu) && (
                 <button
-                  onClick={() => { marquerToutLu(); setNonLues(0); setNotifs(getNotifs()); }}
+                  onClick={async () => { await marquerToutLu(); setNonLues(0); setNotifs(await getNotifs() as any); }}
                   className="text-xs text-green-600 font-semibold flex items-center gap-1"
                 >
                   <CheckCheck className="w-3.5 h-3.5" /> Tout marquer lu

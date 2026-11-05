@@ -50,3 +50,28 @@ export async function getObservationsByAgent(agentId: string): Promise<Observati
   const all = await getObservations();
   return all.filter((o) => o.agentId === agentId);
 }
+
+export async function getNotifs(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from("notifs")
+    .select("*")
+    .order("date_creation", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    obsId: r.obs_id,
+    agentNom: r.agent_nom,
+    typeProbleme: r.type_probleme,
+    zone: r.zone,
+    dateCreation: r.date_creation,
+    lu: r.lu,
+  }));
+}
+
+export async function getNotifsNonLues(): Promise<number> {
+  const notifs = await getNotifs();
+  return notifs.filter((n: any) => !n.lu).length;
+}
+
+export async function marquerToutLu(): Promise<void> {
+  await supabase.from("notifs").update({ lu: true }).eq("lu", false);
+}
