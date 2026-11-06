@@ -15,6 +15,7 @@ import {
   Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
 } from "@/lib/types";
 import { clearSession } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { getObservations, getNotifs, getNotifsNonLues, marquerToutLu } from "@/lib/data";
 import type { Notif } from "@/lib/store";
 import QRCodeCanvas from "./QRCodeCanvas";
@@ -95,6 +96,14 @@ export default function AdminApp({ agent, onLogout }: Props) {
       // noop
       window.removeEventListener("storage", handleStorage);
     };
+  }, [charger]);
+
+  useEffect(() => {
+    const channel = supabase.channel("ecowatch-admin")
+      .on("postgres_changes", { event: "*", schema: "public", table: "observations" }, () => charger())
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifs" }, () => charger())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [charger]);
 
   const handleLogout = () => { clearSession(); onLogout(); };
