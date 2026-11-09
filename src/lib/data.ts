@@ -75,3 +75,11 @@ export async function getNotifsNonLues(): Promise<number> {
 export async function marquerToutLu(): Promise<void> {
   await supabase.from("notifs").update({ lu: true }).eq("lu", false);
 }
+
+export async function marquerNotifLu(obsId: string): Promise<void> {
+  await supabase.from("notifs").update({ lu: true }).eq("obs_id", obsId);
+}
+
+export async function marquerNotifNonLu(obsId: string): Promise<void> {
+  await supabase.from("notifs").update({ lu: false }).eq("obs_id", obsId);
+}

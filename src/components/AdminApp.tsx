@@ -16,7 +16,7 @@ import {
 } from "@/lib/types";
 import { clearSession } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
-import { getObservations, getNotifs, getNotifsNonLues, marquerToutLu } from "@/lib/data";
+import { getObservations, getNotifs, getNotifsNonLues, marquerToutLu, marquerNotifLu } from "@/lib/data";
 import type { Notif } from "@/lib/store";
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
@@ -352,7 +352,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
             ) : (
               notifs.map((notif, i) => (
                 <div
-                  key={i}
+                  key={i} onClick={() => { marquerNotifLu(notif.obsId); setNotifs(notifs.map(n => n.obsId === notif.obsId ? {...n, lu: true} : n)); }}
                   className={`rounded-2xl p-4 border transition-all ${
                     !notif.lu
                       ? "bg-green-50 border-green-200 shadow-sm"
