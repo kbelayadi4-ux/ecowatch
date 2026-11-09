@@ -22,6 +22,8 @@ export async function getObservations(): Promise<Observation[]> {
 }
 
 export async function saveObservation(obs: Observation): Promise<{ ok: boolean; erreur?: string }> {
+  // Notification is now created by database trigger (create_notification_for_observation)
+  // to ensure atomicity and avoid client-side trust issues
   const { error } = await supabase.from("observations").insert({
     id: obs.id,
     agent_id: obs.agentId,
@@ -35,14 +37,6 @@ export async function saveObservation(obs: Observation): Promise<{ ok: boolean; 
     partage: obs.partage,
   });
   if (error) return { ok: false, erreur: error.message };
-  await supabase.from("notifs").insert({
-    id: `n-${obs.id}`,
-    obs_id: obs.id,
-    agent_nom: obs.agentNom,
-    type_probleme: obs.typeProbleme,
-    zone: obs.zone,
-    date_creation: obs.dateCreation,
-  });
   return { ok: true };
 }
 

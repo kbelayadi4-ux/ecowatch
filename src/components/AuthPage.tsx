@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { signInWithPhone, signUpAgent, onAuthChange } from "@/lib/auth";
+import { signInWithPhone, signUpAgent, verifyOtp, onAuthChange } from "@/lib/auth";
 import { Agent } from "@/lib/types";
 import {
   Phone,
@@ -12,8 +12,6 @@ import {
   HardHat,
   ShieldCheck,
   ChevronLeft,
-  Eye,
-  EyeOff,
   Loader2,
 } from "lucide-react";
 
@@ -75,7 +73,7 @@ export default function AuthPage({ onLogin }: Props) {
     }
   };
 
-  // INSCRIPTION
+  // INSCRIPTION (always creates agent role, admin role assigned by admin via Supabase Dashboard)
   const handleInscription = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
@@ -105,15 +103,12 @@ export default function AuthPage({ onLogin }: Props) {
     }
     setChargement(true);
     setErreur("");
-    const { error } = await supabase.auth.verifyOtp({
-      phone: `+216${normaliser(telephone)}`,
-      token: codeOtp,
-      type: "sms",
-    });
+    const { error } = await verifyOtp(telephone, codeOtp);
     setChargement(false);
     if (error) {
-      setErreur(error.message);
+      setErreur(error);
     }
+    // onAuthChange will trigger onLogin
   };
 
   // RENDU
@@ -333,25 +328,11 @@ export default function AuthPage({ onLogin }: Props) {
               />
             </div>
 
-            {/* Code admin */}
             {roleChoisi === "admin" && (
-              <>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Code d'acces administrateur
-                </label>
-                <div className="relative mb-4">
-                  <input
-                    className="input-terrain pr-12"
-                    type="password"
-                    placeholder="Code secret"
-                    value={codeOtp}
-                    onChange={(e) => { setCodeOtp(e.target.value); setErreur(""); }}
-                  />
-                </div>
-                <p className="text-xs text-gray-400 mb-4 -mt-2">
-                  Demandez ce code a votre responsable informatique.
-                </p>
-              </>
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-700">
+                <p className="font-semibold mb-1">Compte administrateur</p>
+                <p>Le role admin est attribue par l'equipe technique via Supabase Dashboard.</p>
+              </div>
             )}
 
             {erreur && <MessageErreur texte={erreur} />}

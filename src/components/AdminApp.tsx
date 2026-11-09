@@ -123,10 +123,15 @@ export default function AdminApp({ agent, onLogout }: Props) {
   // ── Ajout manuel ────────────────────────────────────────────
   const handleAjoutManuel = async () => {
     setChargement(true);
-    if (!formType || !formZone || !formAgentNom.trim()) return;
+    if (!formType || !formZone || !formAgentNom.trim()) {
+      setChargement(false);
+      return;
+    }
+    // Use admin's actual agent_id for FK constraint
+    const adminAgentId = agent.id;
     const nouvelleObs: Observation = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
-      agentId: "admin-manuel",
+      agentId: adminAgentId,
       agentNom: formAgentNom.trim(),
       agentTelephone: "00000000",
       typeProbleme: formType,
@@ -144,7 +149,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
       setFormSucces(false);
       setFormType(null); setFormZone(null); setFormCommentaire(""); setFormPhoto(null); setFormAgentNom("");
       setChargement(false);
-    charger();
+      charger();
     }, 2000);
   };
 

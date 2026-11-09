@@ -20,32 +20,41 @@ export async function getCurrentAgent(): Promise<Agent | null> {
 
 /**
  * Sign in with phone number (OTP)
+ * Uses Supabase's signInWithOtp which sends SMS OTP
  */
 export async function signInWithPhone(phone: string): Promise<{ error: string | null }> {
+  const normalizedPhone = phone.replace(/\s/g, "").replace(/^216/, "");
   const { error } = await supabase.auth.signInWithOtp({
-    phone: `+216${phone.replace(/\s/g, "").replace(/^216/, "")}`,
+    phone: `+216${normalizedPhone}`,
   });
   return { error: error?.message ?? null };
 }
 
 /**
- * Sign in with email (OTP)
+ * Sign up new agent (sends OTP to phone)
+ * Note: The agent profile in `agents` table will be created after OTP verification
+ * via a database trigger or manually by admin. For now, we just send OTP.
  */
-export async function signInWithEmail(email: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.auth.signInWithOtp({ email });
+export async function signUpAgent(phone: string, nom: string): Promise<{ error: string | null }> {
+  const normalizedPhone = phone.replace(/\s/g, "").replace(/^216/, "");
+  const { error } = await supabase.auth.signInWithOtp({
+    phone: `+216${normalizedPhone}`,
+    options: {
+      data: { nom, role: "agent" },
+    },
+  });
   return { error: error?.message ?? null };
 }
 
 /**
- * Sign up new agent (creates Auth user + agent profile via trigger)
- * Note: Actual profile creation happens after email/phone verification
+ * Verify OTP code
  */
-export async function signUpAgent(phone: string, nom: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.auth.signInWithOtp({
-    phone: `+216${phone.replace(/\s/g, "").replace(/^216/, "")}`,
-    options: {
-      data: { nom, role: "agent" },
-    },
+export async function verifyOtp(phone: string, token: string): Promise<{ error: string | null }> {
+  const normalizedPhone = phone.replace(/\s/g, "").replace(/^216/, "");
+  const { error } = await supabase.auth.verifyOtp({
+    phone: `+216${normalizedPhone}`,
+    token,
+    type: "sms",
   });
   return { error: error?.message ?? null };
 }
@@ -73,10 +82,24 @@ export function onAuthChange(callback: (agent: Agent | null) => void) {
 }
 
 /**
- * Check if current user is admin
+ * Check if current user is admin (reads from app_metadata.role in JWT)
  */
 export async function isCurrentUserAdmin(): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
   return user.app_metadata?.role === "admin";
+}
+
+/**
+ * Get current user's JWT claims for debugging
+ */
+export async function getCurrentUserClaims(): Promise<Record<string, any> | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  return {
+    id: user.id,
+    phone: user.phone,
+    app_metadata: user.app_metadata,
+    user_metadata: user.user_metadata,
+  };
 }

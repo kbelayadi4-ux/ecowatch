@@ -3,7 +3,7 @@
  * Creates Supabase Auth users for existing agents and links them via auth_user_id.
  * 
  * Usage: POST /functions/v1/migrate-agents
- * Body: { "adminSecret": "SERVICE_ROLE_KEY" }  -- or use Authorization header
+ * Header: Authorization: Bearer <SERVICE_ROLE_KEY>
  * 
  * Run ONCE after 001 migration is applied and before 003.
  * 
@@ -26,10 +26,6 @@ interface AgentRecord {
   auth_user_id: string | null;
 }
 
-interface RequestBody {
-  adminSecret?: string;
-}
-
 serve(async (req: Request) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
@@ -45,14 +41,12 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { adminSecret } = (await req.json()) as RequestBody;
-    
-    // Verify service role key (passed via header or body)
+    // Verify service role key from Authorization header
     const authHeader = req.headers.get("Authorization") ?? "";
-    const serviceRoleKey = adminSecret ?? authHeader.replace("Bearer ", "");
+    const serviceRoleKey = authHeader.replace("Bearer ", "").trim();
     
     if (!serviceRoleKey) {
-      return new Response(JSON.stringify({ error: "Service role key required" }), {
+      return new Response(JSON.stringify({ error: "Service role key required in Authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -84,34 +78,53 @@ serve(async (req: Request) => {
     const results: Array<{ agentId: string; telephone: string; authUserId: string | null; error: string | null }> = [];
     let migrated = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const agent of agents as AgentRecord[]) {
       try {
         // Format phone for Supabase Auth (E.164)
         const phone = `+216${agent.telephone}`;
 
-        // Create user in Supabase Auth with random password
-        // Admin will send magic link OTP for actual login
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          phone,
-          phone_confirm: true, // Mark as confirmed since we're migrating existing users
-          user_metadata: {
-            role: agent.role,
-            nom: agent.nom,
-            migrated: true,
-          },
-        });
+        // Check if user already exists in Auth (by phone)
+        const { data: existingUsers } = await supabase.auth.admin.listUsers();
+        const existingUser = existingUsers.users.find(u => u.phone === phone);
+        
+        let authUserId: string;
+        
+        if (existingUser) {
+          authUserId = existingUser.id;
+          // Update app_metadata.role if needed
+          await supabase.auth.admin.updateUserById(authUserId, {
+            app_metadata: { role: agent.role }
+          });
+          results.push({ agentId: agent.id, telephone: agent.telephone, authUserId, error: "User already existed, role updated" });
+          skipped++;
+        } else {
+          // Create user in Supabase Auth with phone NOT confirmed (requires OTP verification)
+          const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+            phone,
+            phone_confirm: false, // Require OTP verification on first login
+            user_metadata: {
+              nom: agent.nom,
+              migrated: true,
+            },
+            app_metadata: {
+              role: agent.role,
+            },
+          });
 
-        if (authError) throw authError;
+          if (authError) throw authError;
 
-        const authUserId = authData.user?.id;
-        if (!authUserId) throw new Error("No user ID returned");
+          authUserId = authData.user?.id;
+          if (!authUserId) throw new Error("No user ID returned");
+        }
 
-        // Update agent with auth_user_id
+        // Update agent with auth_user_id (idempotent - won't overwrite if already set)
         const { error: updateError } = await supabase
           .from("agents")
           .update({ auth_user_id: authUserId })
-          .eq("id", agent.id);
+          .eq("id", agent.id)
+          .is("auth_user_id", null); // Only update if not already linked
 
         if (updateError) throw updateError;
 
@@ -125,8 +138,9 @@ serve(async (req: Request) => {
     }
 
     return new Response(JSON.stringify({ 
-      message: `Migration complete: ${migrated} succeeded, ${failed} failed`,
+      message: `Migration complete: ${migrated} created, ${skipped} updated, ${failed} failed`,
       migrated,
+      skipped,
       failed,
       details: results,
     }), {
