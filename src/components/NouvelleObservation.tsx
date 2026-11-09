@@ -1,6 +1,7 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   ChevronLeft,
   Camera,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/types";
 import { generateId, compresserPhoto } from "@/lib/store";
 import { saveObservation } from "@/lib/data";
+import { supabase } from "@/lib/supabase";
 
 interface Props {
   agent: Agent;
@@ -30,27 +32,14 @@ interface Props {
 }
 
 const COULEUR_BADGE: Record<TypeProbleme, string> = {
-  fuite_huile: "badge-orange",
-  fuite_eau: "badge-blue",
-  fuite_matiere: "badge-purple",
-  dechet_mal_trie: "badge-green",
-  chiffon_souille: "badge-yellow",
-  epi_eparpille: "badge-yellow",
-  site_mal_arrange: "badge-gray",
-  odeur_anormal: "badge-red",
-  autre: "badge-gray",
+  fuite_huile: "badge-orange", fuite_eau: "badge-blue", fuite_matiere: "badge-purple",
+  dechet_mal_trie: "badge-green", chiffon_souille: "badge-yellow", epi_eparpille: "badge-yellow",
+  site_mal_arrange: "badge-gray", odeur_anormal: "badge-red", autre: "badge-gray",
 };
 
 const ICONE_PROBLEME: Record<TypeProbleme, string> = {
-  fuite_huile: "🛢️",
-  fuite_eau: "💧",
-  fuite_matiere: "⚗️",
-  dechet_mal_trie: "♻️",
-  chiffon_souille: "🧹",
-  epi_eparpille: "🦺",
-  site_mal_arrange: "🏭",
-  odeur_anormal: "💨",
-  autre: "⚠️",
+  fuite_huile: "🛢️", fuite_eau: "💧", fuite_matiere: "⚗️", dechet_mal_trie: "♻️",
+  chiffon_souille: "🧹", epi_eparpille: "🦺", site_mal_arrange: "🏭", odeur_anormal: "💨", autre: "⚠️",
 };
 
 type Etat = "formulaire" | "envoi" | "succes" | "erreur";
@@ -63,6 +52,25 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   const [etat, setEtat] = useState<Etat>("formulaire");
   const [avertissement, setAvertissement] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [agentId, setAgentId] = useState<string>(agent.id);
+
+  // Sync agentId with Supabase Auth user
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        // Get agent profile linked to auth user
+        const { data } = await supabase.from("agents").select("id").eq("auth_user_id", session.user.id).maybeSingle();
+        if (data) setAgentId(data.id);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Initialize agentId from props (fallback for non-migrated accounts)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    setAgentId(agent.id);
+  }, [agent.id]);
 
   const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][];
   const zones = Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][];
@@ -74,7 +82,6 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result as string;
-      // Compression automatique avant stockage
       const compresse = await compresserPhoto(base64, 800, 0.72);
       setPhoto(compresse);
     };
@@ -89,7 +96,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
 
     const obs: Observation = {
       id: generateId(),
-      agentId: agent.id,
+      agentId, // Uses auth-linked agent ID
       agentNom: agent.nom,
       agentTelephone: agent.telephone,
       typeProbleme: type,
@@ -113,22 +120,13 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   };
 
   const recommencer = () => {
-    setType(null);
-    setCommentaire("");
-    setZone(null);
-    setPhoto(null);
-    setEtat("formulaire");
-    setAvertissement(null);
+    setType(null); setCommentaire(""); setZone(null); setPhoto(null);
+    setEtat("formulaire"); setAvertissement(null);
   };
 
   // ── ÉCRAN : Envoi en cours ───────────────────────────────────
   if (etat === "envoi") {
-    return (
-      <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6">
-        <Loader2 className="w-16 h-16 text-green-600 animate-spin mb-4" />
-        <p className="text-green-800 font-bold text-lg">Enregistrement…</p>
-      </div>
-    );
+    return <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6"><Loader2 className="w-16 h-16 text-green-600 animate-spin mb-4" /><p className="text-green-800 font-bold text-lg">Enregistrement…</p></div>;
   }
 
   // ── ÉCRAN : Succès ───────────────────────────────────────────
@@ -136,67 +134,28 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     return (
       <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-6">
         <div className="w-full max-w-sm">
-          {/* Animation succès */}
           <div className="text-center mb-6">
             <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-14 h-14 text-green-600" strokeWidth={1.5} />
             </div>
-            <h2 className="text-2xl font-black text-green-800 mb-1">
-              Signalement envoyé !
-            </h2>
-            <p className="text-gray-500 text-sm">
-              L&apos;administrateur a été notifié automatiquement.
-            </p>
+            <h2 className="text-2xl font-black text-green-800 mb-1">Signalement envoyé !</h2>
+            <p className="text-gray-500 text-sm">L'administrateur a été notifié automatiquement.</p>
           </div>
-
-          {/* Résumé de l'observation */}
           <div className="bg-white rounded-2xl p-4 shadow-sm mb-5 space-y-2">
             <div className="flex items-center gap-3">
               <span className="text-2xl">{type ? ICONE_PROBLEME[type] : "⚠️"}</span>
               <div>
-                <p className="font-black text-gray-800">
-                  {type ? LIBELLES_PROBLEMES[type] : ""}
-                </p>
-                <p className="text-xs text-gray-500">
-                  📍 {zone ? LIBELLES_ZONES[zone] : ""} &nbsp;•&nbsp; {new Date().toLocaleString("fr-TN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </p>
+                <p className="font-black text-gray-800">{type ? LIBELLES_PROBLEMES[type] : ""}</p>
+                <p className="text-xs text-gray-500">📍 {zone ? LIBELLES_ZONES[zone] : ""} &nbsp;•&nbsp; {new Date().toLocaleString("fr-TN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
               </div>
             </div>
-            {commentaire && (
-              <p className="text-sm text-gray-600 bg-gray-50 rounded-xl p-2">
-                {commentaire}
-              </p>
-            )}
-            {photo && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={photo} alt="Photo" className="w-full max-h-28 object-cover rounded-xl" />
-            )}
+            {commentaire && <p className="text-sm text-gray-600 bg-gray-50 rounded-xl p-2">{commentaire}</p>}
+            {photo && <img src={photo} alt="Photo" className="w-full max-h-28 object-cover rounded-xl" />}
           </div>
-
-          {/* Avertissement si photo ignorée */}
-          {avertissement && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 flex gap-2">
-              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-yellow-700">{avertissement}</p>
-            </div>
-          )}
-
-          {/* Actions */}
+          {avertissement && <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 flex gap-2"><AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" /><p className="text-xs text-yellow-700">{avertissement}</p></div>}
           <div className="space-y-3">
-            <button
-              className="btn-terrain btn-primary w-full text-lg"
-              style={{ minHeight: 72 }}
-              onClick={recommencer}
-            >
-              <Send className="w-6 h-6" />
-              Nouveau signalement
-            </button>
-            <button
-              className="btn-terrain btn-secondary w-full"
-              onClick={onSaved}
-            >
-              Voir mes signalements
-            </button>
+            <button className="btn-terrain btn-primary w-full text-lg" style={{ minHeight: 72 }} onClick={recommencer}><Send className="w-6 h-6" /> Nouveau signalement</button>
+            <button className="btn-terrain btn-secondary w-full" onClick={onSaved}>Voir mes signalements</button>
           </div>
         </div>
       </div>
@@ -209,19 +168,11 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
       <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center px-6">
         <div className="w-full max-w-sm text-center">
           <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-black text-red-700 mb-2">
-            Échec de l&apos;enregistrement
-          </h2>
-          <p className="text-gray-600 text-sm mb-6">
-            La mémoire de l&apos;application est pleine. Essayez sans photo ou contactez l&apos;administrateur.
-          </p>
+          <h2 className="text-xl font-black text-red-700 mb-2">Échec de l'enregistrement</h2>
+          <p className="text-gray-600 text-sm mb-6">La mémoire de l'application est pleine. Essayez sans photo ou contactez l'administrateur.</p>
           <div className="space-y-3">
-            <button className="btn-terrain btn-primary w-full" onClick={recommencer}>
-              Réessayer sans photo
-            </button>
-            <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>
-              Retour
-            </button>
+            <button className="btn-terrain btn-primary w-full" onClick={recommencer}>Réessayer sans photo</button>
+            <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>Retour</button>
           </div>
         </div>
       </div>
@@ -233,146 +184,52 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
       <header className="bg-green-700 text-white px-5 py-4 flex items-center gap-3 shadow-md sticky top-0 z-10">
-        <button
-          onClick={onRetour}
-          className="bg-white/20 rounded-xl p-2 hover:bg-white/30 transition-colors"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
-        <div>
-          <p className="font-black text-lg leading-none">Nouvelle Observation</p>
-          <p className="text-green-200 text-xs">{agent.nom}</p>
-        </div>
+        <button onClick={onRetour} className="bg-white/20 rounded-xl p-2 hover:bg-white/30 transition-colors"><ChevronLeft className="w-6 h-6" /></button>
+        <div><p className="font-black text-lg leading-none">Nouvelle Observation</p><p className="text-green-200 text-xs">{agent.nom}</p></div>
       </header>
-
       <main className="flex-1 px-4 py-5 space-y-5 pb-32">
-        {/* Type de problème */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
-          <h3 className="font-black text-gray-800 text-base mb-1">
-            Type de problème <span className="text-red-500">*</span>
-          </h3>
+          <h3 className="font-black text-gray-800 text-base mb-1">Type de problème <span className="text-red-500">*</span></h3>
           <p className="text-gray-500 text-xs mb-3">Sélectionnez la catégorie</p>
-          <div className="grid grid-cols-1 gap-2">
-            {typesProblemes.map(([key, label]) => (
-              <button
-                key={key}
-                className={`choix-card ${type === key ? "selected" : ""}`}
-                onClick={() => setType(key)}
-              >
-                <span className="text-xl mr-3">{ICONE_PROBLEME[key]}</span>
-                <span className="flex-1 text-left">{label}</span>
-                {type === key && (
-                  <span className="ml-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-3.5 h-3.5 text-white" />
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <div className="grid grid-cols-1 gap-2">{typesProblemes.map(([key, label]) => (
+            <button key={key} className={`choix-card ${type === key ? "selected" : ""}`} onClick={() => setType(key)}>
+              <span className="text-xl mr-3">{ICONE_PROBLEME[key]}</span><span className="flex-1 text-left">{label}</span>
+              {type === key && <span className="ml-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0"><CheckCircle className="w-3.5 h-3.5 text-white" /></span>}
+            </button>
+          ))}</div>
         </section>
-
-        {/* Zone */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
-          <h3 className="font-black text-gray-800 text-base mb-1">
-            Zone <span className="text-red-500">*</span>
-          </h3>
+          <h3 className="font-black text-gray-800 text-base mb-1">Zone <span className="text-red-500">*</span></h3>
           <p className="text-gray-500 text-xs mb-3">Où se trouve le problème ?</p>
-          <div className="grid grid-cols-2 gap-2">
-            {zones.map(([key, label]) => (
-              <button
-                key={key}
-                className={`choix-card justify-center text-center ${zone === key ? "selected" : ""}`}
-                onClick={() => setZone(key)}
-              >
-                <MapPin className="w-4 h-4 mr-1 flex-shrink-0" />
-                {label}
-              </button>
-            ))}
-          </div>
+          <div className="grid grid-cols-2 gap-2">{zones.map(([key, label]) => (
+            <button key={key} className={`choix-card justify-center text-center ${zone === key ? "selected" : ""}`} onClick={() => setZone(key)}>
+              <MapPin className="w-4 h-4 mr-1 flex-shrink-0" />{label}
+            </button>
+          ))}</div>
         </section>
-
-        {/* Commentaire */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">Commentaire</h3>
           <p className="text-gray-500 text-xs mb-3">Description courte (facultatif)</p>
-          <textarea
-            className="input-terrain resize-none"
-            rows={3}
-            placeholder="Ex: Fuite visible sous la cuve n°3…"
-            value={commentaire}
-            onChange={(e) => setCommentaire(e.target.value)}
-            maxLength={300}
-          />
-          <p className="text-right text-xs text-gray-400 mt-1">{commentaire.length}/300</p>
+          <textarea className="input-terrain resize-none" rows={3} placeholder="Ex: Fuite visible sous la cuve n°3…" value={commentaire} onChange={e => setCommentaire(e.target.value)} maxLength={300} /><p className="text-right text-xs text-gray-400 mt-1">{commentaire.length}/300</p>
         </section>
-
-        {/* Photo */}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">Photo</h3>
-          <p className="text-gray-500 text-xs mb-3">
-            Facultatif – compressée automatiquement
-          </p>
+          <p className="text-gray-500 text-xs mb-3">Facultatif – compressée automatiquement</p>
           {photo ? (
-            <div className="relative rounded-xl overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photo} alt="Photo" className="w-full object-cover max-h-56 rounded-xl" />
-              <button
-                onClick={() => setPhoto(null)}
-                className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 shadow-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <div className="relative rounded-xl overflow-hidden"><img src={photo} alt="Photo" className="w-full object-cover max-h-56 rounded-xl" /><button onClick={() => setPhoto(null)} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 shadow-lg"><X className="w-4 h-4" /></button></div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <button
-                className="btn-terrain btn-secondary"
-                onClick={() => {
-                  if (fileRef.current) {
-                    fileRef.current.setAttribute("capture", "environment");
-                    fileRef.current.click();
-                  }
-                }}
-              >
-                <Camera className="w-5 h-5" />
-                Caméra
-              </button>
-              <button
-                className="btn-terrain btn-secondary"
-                onClick={() => {
-                  if (fileRef.current) {
-                    fileRef.current.removeAttribute("capture");
-                    fileRef.current.click();
-                  }
-                }}
-              >
-                <ImageIcon className="w-5 h-5" />
-                Galerie
-              </button>
+              <button className="btn-terrain btn-secondary" onClick={() => { if (fileRef.current) { fileRef.current.setAttribute("capture", "environment"); fileRef.current.click(); } }}><Camera className="w-5 h-5" /> Caméra</button>
+              <button className="btn-terrain btn-secondary" onClick={() => { if (fileRef.current) { fileRef.current.removeAttribute("capture"); fileRef.current.click(); } }}><ImageIcon className="w-5 h-5" /> Galerie</button>
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
         </section>
       </main>
-
-      {/* Bouton flottant */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
-        <button
-          className={`btn-terrain w-full text-lg ${peutEnvoyer ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
-          style={{ minHeight: 68 }}
-          disabled={!peutEnvoyer}
-          onClick={handleEnvoyer}
-        >
-          <Send className="w-6 h-6" />
-          Envoyer le signalement
-        </button>
-        {!peutEnvoyer && (
-          <p className="text-center text-xs text-gray-400 mt-1.5">
-            Choisissez le type et la zone pour continuer
-          </p>
-        )}
+        <button className={`btn-terrain w-full text-lg ${peutEnvoyer ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`} style={{ minHeight: 68 }} disabled={!peutEnvoyer} onClick={handleEnvoyer}><Send className="w-6 h-6" /> Envoyer le signalement</button>
+        {!peutEnvoyer && <p className="text-center text-xs text-gray-400 mt-1.5">Choisissez le type et la zone pour continuer</p>}
       </div>
     </div>
   );

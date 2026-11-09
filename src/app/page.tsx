@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSession } from "@/lib/store";
 import { Agent } from "@/lib/types";
+import { getCurrentAgent, onAuthChange, signOut } from "@/lib/auth";
 import AuthPage from "@/components/AuthPage";
 import AgentApp from "@/components/AgentApp";
 import AdminApp from "@/components/AdminApp";
@@ -11,11 +11,19 @@ export default function Home() {
   const [session, setSession] = useState<Agent | null | undefined>(undefined);
 
   useEffect(() => {
-    const s = getSession();
-    // setTimeout(0) avoids triggering set-state-in-effect lint rule
-    // while still deferring until after mount
-    const id = setTimeout(() => setSession(s), 0);
-    return () => clearTimeout(id);
+    // Check for existing Supabase session
+    const checkSession = async () => {
+      const agent = await getCurrentAgent();
+      setSession(agent);
+    };
+    checkSession();
+
+    // Listen for auth changes
+    const unsub = onAuthChange((agent) => {
+      setSession(agent);
+    });
+
+    return () => unsub();
   }, []);
 
   if (session === undefined) {
@@ -31,8 +39,8 @@ export default function Home() {
   }
 
   if (session.role === "admin") {
-    return <AdminApp agent={session} onLogout={() => setSession(null)} />;
+    return <AdminApp agent={session} onLogout={() => { signOut(); setSession(null); }} />;
   }
 
-  return <AgentApp agent={session} onLogout={() => setSession(null)} />;
+  return <AgentApp agent={session} onLogout={() => { signOut(); setSession(null); }} />;
 }

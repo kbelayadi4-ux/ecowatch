@@ -37,10 +37,12 @@ export default function MesSignalements({ agent, onRetour, onNouvelle }: Props) 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     const id = setTimeout(async () => {
-      setObservations(await getObservationsByAgent(agent.id));
+      const obs = await getObservationsByAgent(agent.id);
+      if (mounted) setObservations(obs);
     }, 0);
-    return () => clearTimeout(id);
+    return () => { mounted = false; clearTimeout(id); };
   }, [agent.id]);
 
   const formatDate = (iso: string) => {

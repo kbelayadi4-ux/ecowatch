@@ -4,6 +4,9 @@ const eslintConfig = [
   ...nextConfig,
   {
     ignores: ["node_modules/**"],
+    rules: {
+      "react/no-unescaped-entities": "off",
+    },
   },
 ];
 

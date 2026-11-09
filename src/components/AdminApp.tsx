@@ -7,13 +7,12 @@ import {
 } from "recharts";
 import {
   LogOut, Download, QrCode, Calendar, MapPin, User,
+  Leaf,
   Filter, X, Image as ImageIcon, BarChart2,
   PieChart as PieChartIcon, List, Bell, BellRing, CheckCheck,
   PlusCircle, Send, Camera, CheckCircle,
 } from "lucide-react";
-import {
-  Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine,
-} from "@/lib/types";
+import { Agent, Observation, LIBELLES_PROBLEMES, LIBELLES_ZONES, TypeProbleme, ZoneUsine } from "@/lib/types";
 import { clearSession } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { getObservations, getNotifs, getNotifsNonLues, marquerToutLu, marquerNotifLu } from "@/lib/data";
@@ -58,6 +57,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
   const [formPhoto, setFormPhoto] = useState<string | null>(null);
   const [formAgentNom, setFormAgentNom] = useState("");
   const [formSucces, setFormSucces] = useState(false);
+  const [chargement, setChargement] = useState(false);
 
   // ── Rechargement des données ─────────────────────────────────
   const charger = useCallback(async () => {
@@ -69,100 +69,63 @@ export default function AdminApp({ agent, onLogout }: Props) {
     setNonLues(nl);
   }, []);
 
+  // Chargement initial + polling + realtime
   useEffect(() => {
-    // Chargement immédiat au montage (différé légèrement pour éviter le warning lint)
     const init = setTimeout(() => { charger(); }, 0);
     const interval = setInterval(() => { charger(); }, 3000);
-    return () => { clearTimeout(init); clearInterval(interval); };
-  }, [charger]);
-
-  // ── Écoute des événements temps réel (même onglet) ──────────
-  useEffect(() => {
-    const handleNewObs = (e: Event) => {
-      const obs = (e as CustomEvent<Notif>).detail;
-      charger();
-      // Afficher toast 4 secondes
-      setToast(obs as unknown as Notif);
-      setTimeout(() => setToast(null), 4000);
-    };
-    // Même onglet
-    // no local events; Supabase polling handles sync
-    // Autres onglets (storage event)
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "eco_observations" || e.key === "eco_notifs") charger();
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      // noop
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [charger]);
-
-  useEffect(() => {
+    
+    // Realtime subscriptions
     const channel = supabase.channel("ecowatch-admin")
       .on("postgres_changes", { event: "*", schema: "public", table: "observations" }, () => charger())
       .on("postgres_changes", { event: "*", schema: "public", table: "notifs" }, () => charger())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    
+    return () => { clearTimeout(init); clearInterval(interval); supabase.removeChannel(channel); };
   }, [charger]);
+
+  // ── Toast pour nouvelle observation ─────────────────────────
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const handleLogout = () => { clearSession(); onLogout(); };
 
-  const ouvrirNotifs = () => {
-    setOnglet("notifs");
-    marquerToutLu();
-    setNonLues(0);
+  // ── Formatting ──────────────────────────────────────────────
+  const fmtDate = (iso: string) => new Date(iso).toLocaleString("fr-TN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const fmtCourt = (iso: string) => new Date(iso).toLocaleString("fr-TN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  // ── Export Excel ────────────────────────────────────────────
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(observations.map(o => ({
+      ID: o.id, Agent: o.agentNom, Téléphone: o.agentTelephone,
+      Type: LIBELLES_PROBLEMES[o.typeProbleme], Zone: LIBELLES_ZONES[o.zone],
+      Commentaire: o.commentaire, Date: fmtDate(o.dateCreation), Partage: o.partage ? "Oui" : "Non",
+    })));
+    XLSX.utils.book_append_sheet(wb, ws, "Signalements");
+    XLSX.writeFile(wb, `EcoWatch_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
-  // ── Graphique barres ─────────────────────────────────────────
-  const donneesParJour = useMemo(() => {
-    const map: Record<string, number> = {};
-    observations.forEach((obs) => {
-      const d = new Date(obs.dateCreation).toLocaleDateString("fr-TN", { day: "2-digit", month: "2-digit" });
-      map[d] = (map[d] || 0) + 1;
+  // ── Statistiques ────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const parType: Record<TypeProbleme, number> = {} as any;
+    const parZone: Record<ZoneUsine, number> = {} as any;
+    observations.forEach(o => {
+      parType[o.typeProbleme] = (parType[o.typeProbleme] || 0) + 1;
+      parZone[o.zone] = (parZone[o.zone] || 0) + 1;
     });
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).slice(-14).map(([date, total]) => ({ date, total }));
+    return { parType, parZone, total: observations.length };
   }, [observations]);
 
-  // ── Camembert ────────────────────────────────────────────────
-  const donneesCamembert = useMemo(() => {
-    const map: Record<string, number> = {};
-    observations.forEach((obs) => {
-      const label = LIBELLES_PROBLEMES[obs.typeProbleme];
-      map[label] = (map[label] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [observations]);
-
-  // ── Filtres ──────────────────────────────────────────────────
-  const listeFiltree = useMemo(() =>
-    observations.filter((obs) => {
-      if (filtreZone && obs.zone !== filtreZone) return false;
-      if (filtreType && obs.typeProbleme !== filtreType) return false;
-      return true;
-    }),
-    [observations, filtreZone, filtreType]
-  );
-
-  // ── KPIs ─────────────────────────────────────────────────────
-  const kpis = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toDateString();
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    return {
-      total: observations.length,
-      aujourdhui: observations.filter((o) => new Date(o.dateCreation).toDateString() === todayStr).length,
-      semaine: observations.filter((o) => now.getTime() - new Date(o.dateCreation).getTime() <= weekMs).length,
-      avecPhoto: observations.filter((o) => o.photo).length,
-    };
-  }, [observations]);
-
-  // ── Ajout manuel ───────────────────────────────────────────────
-  const handleAjoutManuel = () => {
+  // ── Ajout manuel ────────────────────────────────────────────
+  const handleAjoutManuel = async () => {
+    setChargement(true);
     if (!formType || !formZone || !formAgentNom.trim()) return;
-    
     const nouvelleObs: Observation = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2,9)}`,
       agentId: "admin-manuel",
       agentNom: formAgentNom.trim(),
       agentTelephone: "00000000",
@@ -173,154 +136,46 @@ export default function AdminApp({ agent, onLogout }: Props) {
       dateCreation: new Date().toISOString(),
       partage: false,
     };
-    
-    import("@/lib/data").then(({ saveObservation }) => saveObservation(nouvelleObs));
-    
+    // Insert via data layer (will trigger notification via DB trigger)
+    const { saveObservation } = await import("@/lib/data");
+    await saveObservation(nouvelleObs);
     setFormSucces(true);
     setTimeout(() => {
       setFormSucces(false);
-      setFormType(null);
-      setFormZone(null);
-      setFormCommentaire("");
-      setFormPhoto(null);
-      setFormAgentNom("");
-      charger();
+      setFormType(null); setFormZone(null); setFormCommentaire(""); setFormPhoto(null); setFormAgentNom("");
+      setChargement(false);
+    charger();
     }, 2000);
   };
 
-  // ── Export ───────────────────────────────────────────────────
-  const exporterExcel = () => {
-    const data = listeFiltree.map((obs) => ({
-      Date: new Date(obs.dateCreation).toLocaleString("fr-TN"),
-      Agent: obs.agentNom, Telephone: `+216 ${obs.agentTelephone}`,
-      Type: LIBELLES_PROBLEMES[obs.typeProbleme], Zone: LIBELLES_ZONES[obs.zone],
-      Commentaire: obs.commentaire, Photo: obs.photo ? "Oui" : "Non",
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Observations");
-    XLSX.writeFile(wb, `EcoWatch_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  };
-
-  const exporterCSV = () => {
-    const data = listeFiltree.map((obs) => ({
-      Date: new Date(obs.dateCreation).toLocaleString("fr-TN"),
-      Agent: obs.agentNom, Telephone: `+216 ${obs.agentTelephone}`,
-      Type: LIBELLES_PROBLEMES[obs.typeProbleme], Zone: LIBELLES_ZONES[obs.zone],
-      Commentaire: obs.commentaire, Photo: obs.photo ? "Oui" : "Non",
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const csv = XLSX.utils.sheet_to_csv(ws);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `EcoWatch_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-  };
-
-  const fmt = (iso: string) => new Date(iso).toLocaleString("fr-TN", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
-
-  const fmtCourt = (iso: string) => {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
-    if (diffMin < 1) return "À l'instant";
-    if (diffMin < 60) return `Il y a ${diffMin} min`;
-    if (diffMin < 1440) return `Il y a ${Math.floor(diffMin / 60)}h`;
-    return d.toLocaleDateString("fr-TN", { day: "2-digit", month: "2-digit" });
-  };
-
+  // ── RENDU ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-
-      {/* ── Toast notification ─────────────────────────────────── */}
-      {toast && (
-        <div className="fixed top-4 left-4 right-4 z-50 animate-bounce-once">
-          <div className="bg-green-700 text-white rounded-2xl shadow-2xl p-4 flex items-center gap-3 max-w-sm mx-auto">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0 text-xl">
-              {ICONE[toast.typeProbleme] ?? "⚠️"}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-black text-sm">Nouveau signalement !</p>
-              <p className="text-green-200 text-xs truncate">
-                {toast.agentNom} · {LIBELLES_PROBLEMES[toast.typeProbleme as TypeProbleme]} · {LIBELLES_ZONES[toast.zone as keyof typeof LIBELLES_ZONES]}
-              </p>
-            </div>
-            <button onClick={() => setToast(null)} className="text-white/60 hover:text-white">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="bg-green-800 text-white px-5 py-4 shadow-lg">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+      {/* Header */}
+      <header className="bg-green-700 text-white px-5 py-4 flex items-center justify-between shadow-md sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="bg-white/20 rounded-full p-1.5"><Leaf className="w-5 h-5" /></div>
           <div>
-            <p className="font-black text-xl leading-none">EcoWatch Admin</p>
-            <p className="text-green-300 text-xs mt-0.5">
-              {agent.nom} · {observations.length} observations
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={ouvrirNotifs}
-              className="relative bg-white/20 rounded-xl p-2.5 hover:bg-white/30 transition-colors"
-            >
-              {nonLues > 0
-                ? <BellRing className="w-5 h-5 text-yellow-300" />
-                : <Bell className="w-5 h-5" />
-              }
-              {nonLues > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                  {nonLues > 99 ? "99+" : nonLues}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 bg-white/20 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/30 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Sortir
-            </button>
+            <p className="font-black text-lg leading-none">EcoWatch Admin</p>
+            <p className="text-green-200 text-xs">{agent.nom} • Administrateur</p>
           </div>
         </div>
+        <button onClick={handleLogout} className="flex items-center gap-1.5 bg-white/20 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/30 transition-colors">
+          <LogOut className="w-4 h-4" /> Sortir
+        </button>
       </header>
 
-      {/* ── Navigation ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-5xl mx-auto flex flex-wrap">
-          {([
-            { id: "notifs" as Onglet, label: "Alertes", icon: Bell, badge: nonLues },
-            { id: "graphiques" as Onglet, label: "Stats", icon: BarChart2, badge: 0 },
-            { id: "liste" as Onglet, label: "Liste", icon: List, badge: 0 },
-            { id: "ajouter" as Onglet, label: "Ajouter", icon: PlusCircle, badge: 0 },
-            { id: "qr" as Onglet, label: "QR", icon: QrCode, badge: 0 },
-          ] as const).map(({ id, label, icon: Icon, badge }) => (
-            <button
-              key={id}
-              onClick={() => {
-                setOnglet(id);
-                if (id === "notifs") { marquerToutLu(); setNonLues(0); }
-              }}
-              className={`flex-1 relative flex flex-col items-center justify-center gap-0.5 py-3 text-xs font-bold border-b-2 transition-colors ${
-                onglet === id ? "border-green-600 text-green-700" : "border-transparent text-gray-500"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {label}
-              {badge && badge > 0 && (
-                <span className="absolute top-1.5 right-2 bg-red-500 text-white text-xs font-black rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-0.5">
-                  {badge}
-                </span>
-              )}
-            </button>
-          ))}
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 bg-green-50 border border-green-200 rounded-xl p-4 shadow-xl flex items-center gap-3 max-w-sm animate-slide-in">
+          <BellRing className="w-6 h-6 text-green-600 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-black text-green-800 text-sm">{LIBELLES_PROBLEMES[toast.typeProbleme as TypeProbleme]}</p>
+            <p className="text-green-700 text-xs truncate">{toast.agentNom} • {LIBELLES_ZONES[toast.zone as ZoneUsine]}</p>
+          </div>
+          <button onClick={() => setToast(null)} className="text-green-400 hover:text-green-600"><X className="w-5 h-5" /></button>
         </div>
-      </div>
+      )}
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-5">
 
@@ -328,14 +183,9 @@ export default function AdminApp({ agent, onLogout }: Props) {
         {onglet === "notifs" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between mb-1">
-              <h2 className="font-black text-gray-800 text-base">
-                Signalements reçus
-              </h2>
-              {notifs.some((n) => !n.lu) && (
-                <button
-                  onClick={async () => { await marquerToutLu(); setNonLues(0); setNotifs(await getNotifs() as any); }}
-                  className="text-xs text-green-600 font-semibold flex items-center gap-1"
-                >
+              <h2 className="font-black text-gray-800 text-base">Signalements reçus</h2>
+              {notifs.some(n => !n.lu) && (
+                <button onClick={async () => { await marquerToutLu(); setNonLues(0); setNotifs(await getNotifs() as any); }} className="text-xs text-green-600 font-semibold flex items-center gap-1">
                   <CheckCheck className="w-3.5 h-3.5" /> Tout marquer lu
                 </button>
               )}
@@ -345,22 +195,12 @@ export default function AdminApp({ agent, onLogout }: Props) {
               <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
                 <Bell className="w-14 h-14 text-gray-200 mx-auto mb-3" />
                 <p className="text-gray-400 font-semibold">Aucun signalement reçu</p>
-                <p className="text-gray-400 text-sm mt-1">
-                  Les signalements des agents apparaîtront ici automatiquement
-                </p>
+                <p className="text-gray-400 text-sm mt-1">Les signalements des agents apparaîtront ici automatiquement</p>
               </div>
             ) : (
               notifs.map((notif, i) => (
-                <div
-                  key={i} onClick={() => { marquerNotifLu(notif.obsId); setNotifs(notifs.map(n => n.obsId === notif.obsId ? {...n, lu: true} : n)); }}
-                  className={`rounded-2xl p-4 border transition-all ${
-                    !notif.lu
-                      ? "bg-green-50 border-green-200 shadow-sm"
-                      : "bg-white border-gray-100"
-                  }`}
-                >
+                <div key={i} onClick={() => { marquerNotifLu(notif.obsId); setNotifs(notifs.map(n => n.obsId === notif.obsId ? {...n, lu: true} : n)); }} className={`rounded-2xl p-4 border transition-all cursor-pointer ${!notif.lu ? "bg-green-50 border-green-200 shadow-sm" : "bg-white border-gray-100"}`}>
                   <div className="flex items-start gap-3">
-                    {/* Icône */}
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 ${!notif.lu ? "bg-green-100" : "bg-gray-100"}`}>
                       {ICONE[notif.typeProbleme] ?? "⚠️"}
                     </div>
@@ -370,23 +210,13 @@ export default function AdminApp({ agent, onLogout }: Props) {
                           {LIBELLES_PROBLEMES[notif.typeProbleme as TypeProbleme]}
                         </p>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          {!notif.lu && (
-                            <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
-                          )}
-                          <span className="text-xs text-gray-400 whitespace-nowrap">
-                            {fmtCourt(notif.dateCreation)}
-                          </span>
+                          {!notif.lu && <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />}
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{fmtCourt(notif.dateCreation)}</span>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                        <span className="text-xs text-gray-600 flex items-center gap-1">
-                          <User className="w-3 h-3 text-green-600" />
-                          {notif.agentNom}
-                        </span>
-                        <span className="text-xs text-gray-600 flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-green-600" />
-                          {LIBELLES_ZONES[notif.zone as keyof typeof LIBELLES_ZONES]}
-                        </span>
+                        <span className="text-xs text-gray-600 flex items-center gap-1"><User className="w-3 h-3 text-green-600" />{notif.agentNom}</span>
+                        <span className="text-xs text-gray-600 flex items-center gap-1"><MapPin className="w-3 h-3 text-green-600" />{LIBELLES_ZONES[notif.zone as keyof typeof LIBELLES_ZONES]}</span>
                       </div>
                     </div>
                   </div>
@@ -398,252 +228,114 @@ export default function AdminApp({ agent, onLogout }: Props) {
 
         {/* ══ ONGLET GRAPHIQUES ════════════════════════════════════ */}
         {onglet === "graphiques" && (
-          <div className="space-y-5">
-            {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: "Total", val: kpis.total, color: "bg-green-100 text-green-800" },
-                { label: "Aujourd'hui", val: kpis.aujourdhui, color: "bg-blue-100 text-blue-800" },
-                { label: "Cette semaine", val: kpis.semaine, color: "bg-orange-100 text-orange-800" },
-                { label: "Avec photo", val: kpis.avecPhoto, color: "bg-purple-100 text-purple-800" },
-              ].map(({ label, val, color }) => (
-                <div key={label} className={`rounded-2xl p-4 text-center ${color}`}>
-                  <p className="text-3xl font-black">{val}</p>
-                  <p className="text-xs font-semibold mt-1">{label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Barres */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-black text-gray-800 text-base mb-4 flex items-center gap-2">
-                <BarChart2 className="w-5 h-5 text-green-600" />
-                Observations par jour (14 jours)
-              </h3>
-              {donneesParJour.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">Aucune donnée</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={donneesParJour} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                    <Tooltip formatter={(v) => [`${v} obs.`, "Total"]} labelStyle={{ fontWeight: "bold" }} />
-                    <Bar dataKey="total" fill="#16a34a" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Camembert */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-black text-gray-800 text-base mb-4 flex items-center gap-2">
-                <PieChartIcon className="w-5 h-5 text-green-600" />
-                Répartition par type
-              </h3>
-              {donneesCamembert.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">Aucune donnée</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
+          <div className="space-y-6">
+            <h2 className="font-black text-gray-800 text-base">Statistiques</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Par type */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <h3 className="font-black text-gray-800 mb-4">Par type de problème</h3>
+                <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <Pie data={donneesCamembert} cx="50%" cy="45%" outerRadius={85} dataKey="value" label={false} labelLine={false}>
-                      {donneesCamembert.map((_, i) => (
-                        <Cell key={i} fill={COULEURS[i % COULEURS.length]} />
-                      ))}
+                    <Pie data={Object.entries(stats.parType).map(([k,v]) => ({name: LIBELLES_PROBLEMES[k as TypeProbleme], value: v, fullName: k}))} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value" label={({name, percent}) => `${name} ${((percent ?? 0)*100).toFixed(0)}%`} labelLine={false}>
+                      {Object.entries(stats.parType).map((_, i) => <Cell key={i} fill={COULEURS[i % COULEURS.length]} />)}
                     </Pie>
-                    <Tooltip formatter={(v) => [`${v} obs.`]} />
-                    <Legend formatter={(v) => <span style={{ fontSize: 11 }}>{v}</span>} />
+                    {/* @ts-ignore */}<Tooltip formatter={(v) => [v ?? 0, "signalements"]} />
+                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
-              )}
+              </div>
+              {/* Par zone */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <h3 className="font-black text-gray-800 mb-4">Par zone</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={Object.entries(stats.parZone).map(([k,v]) => ({zone: LIBELLES_ZONES[k as ZoneUsine], count: v as number}))} layout="vertical">
+                    <XAxis type="number" dataKey="count" tick={{fontSize: 11}} />
+                    <YAxis type="category" dataKey="zone" width={120} tick={{fontSize: 11}} />
+                    {/* @ts-ignore */}<Tooltip formatter={(v) => [v ?? 0, "signalements"]} />
+                    <Bar dataKey="count" fill="#16a34a" radius={[0,4,4,0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ══ ONGLET LISTE ═════════════════════════════════════════ */}
+        {/* ══ ONGLET LISTE COMPLÈTE ══════════════════════════════ */}
         {onglet === "liste" && (
-          <div className="space-y-4">
-            {/* Filtres + Export */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <Filter className="w-4 h-4 text-green-600" />
-                <span className="font-bold text-sm text-gray-700">Filtres</span>
-                {(filtreZone || filtreType) && (
-                  <button onClick={() => { setFiltreZone(""); setFiltreType(""); }}
-                    className="ml-auto text-xs text-red-500 flex items-center gap-1">
-                    <X className="w-3 h-3" /> Effacer
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <select className="input-terrain text-sm" style={{ minHeight: 44 }} value={filtreZone} onChange={(e) => setFiltreZone(e.target.value)}>
-                  <option value="">Toutes les zones</option>
-                  {Object.entries(LIBELLES_ZONES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <select className="input-terrain text-sm" style={{ minHeight: 44 }} value={filtreType} onChange={(e) => setFiltreType(e.target.value)}>
-                  <option value="">Tous les types</option>
-                  {Object.entries(LIBELLES_PROBLEMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={exporterExcel} className="flex-1 btn-terrain bg-emerald-700 text-white rounded-xl text-sm" style={{ minHeight: 44 }}>
-                  <Download className="w-4 h-4" /> Excel
-                </button>
-                <button onClick={exporterCSV} className="flex-1 btn-terrain bg-blue-700 text-white rounded-xl text-sm" style={{ minHeight: 44 }}>
-                  <Download className="w-4 h-4" /> CSV
-                </button>
-              </div>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 mb-3">
+              <select className="input-terrain" value={filtreZone} onChange={e => setFiltreZone(e.target.value)}><option value="">Toutes zones</option>{Object.entries(LIBELLES_ZONES).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="input-terrain" value={filtreType} onChange={e => setFiltreType(e.target.value)}><option value="">Tous types</option>{Object.entries(LIBELLES_PROBLEMES).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
             </div>
-
-            <p className="text-xs text-gray-500 font-semibold px-1">{listeFiltree.length} observation(s)</p>
-
-            {listeFiltree.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-                <List className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-400 font-semibold">Aucune observation</p>
+            {observations.filter(o => (!filtreZone || o.zone === filtreZone) && (!filtreType || o.typeProbleme === filtreType)).map(obs => (
+              <div key={obs.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div className="flex flex-wrap gap-3 items-start">
+                  <span className={`badge ${COULEUR_BADGE[obs.typeProbleme]}`}>{LIBELLES_PROBLEMES[obs.typeProbleme]}</span>
+                  <span className="text-sm text-gray-500">{LIBELLES_ZONES[obs.zone]}</span>
+                  <span className="text-sm text-gray-500">{fmtDate(obs.dateCreation)}</span>
+                  <span className="text-sm text-gray-500">{obs.agentNom}</span>
+                </div>
+                {obs.commentaire && <p className="mt-2 text-sm text-gray-700 bg-gray-50 rounded-lg p-2">{obs.commentaire}</p>}
+                {obs.photo && <img src={obs.photo} alt="Photo" className="mt-2 max-h-40 rounded-xl" />}
               </div>
-            ) : (
-              <div className="space-y-3">
-                {listeFiltree.map((obs) => (
-                  <div key={obs.id} className="obs-card">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{ICONE[obs.typeProbleme] ?? "⚠️"}</span>
-                        <span className={`badge ${COULEUR_BADGE[obs.typeProbleme]}`}>
-                          {LIBELLES_PROBLEMES[obs.typeProbleme]}
-                        </span>
-                      </div>
-                      <span className="text-xs text-gray-400 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />{fmt(obs.dateCreation)}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-sm text-gray-600 mb-2">
-                      <span className="flex items-center gap-1">
-                        <User className="w-3.5 h-3.5 text-green-600" />
-                        <span className="font-semibold">{obs.agentNom}</span>
-                        <span className="text-xs text-gray-400">+216 {obs.agentTelephone}</span>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-green-600" />
-                        {LIBELLES_ZONES[obs.zone]}
-                      </span>
-                    </div>
-                    {obs.commentaire && (
-                      <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-2 mb-2">{obs.commentaire}</p>
-                    )}
-                    {obs.photo && (
-                      <button onClick={() => setPhotoPreview(obs.photo!)} className="block w-full">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={obs.photo} alt="Photo" className="w-full max-h-36 object-cover rounded-xl border border-gray-200" />
-                        <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                          <ImageIcon className="w-3 h-3" /> Agrandir
-                        </p>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         )}
 
-        {/* ══ ONGLET QR ════════════════════════════════════════════ */}
-        {onglet === "qr" && <QRCodeCanvas />}
+        {/* ══ ONGLET QR CODE ════════════════════════════════════ */}
+        {onglet === "qr" && (
+          <div className="text-center space-y-4">
+            <h2 className="font-black text-gray-800 text-base">QR Code d'accès agents</h2>
+            <p className="text-gray-500 text-sm">Scannez pour ouvrir l'application</p>
+            <QRCodeCanvas />
+            <p className="text-xs text-gray-400">URL: https://animated-kashata-2eeaea.netlify.app</p>
+          </div>
+        )}
 
-        {/* ══ ONGLET AJOUTER MANUEL ════════════════════════════════════ */}
+        {/* ══ ONGLET AJOUT MANUEL ══════════════════════════════ */}
         {onglet === "ajouter" && (
-          <div className="space-y-5">
-            <h2 className="font-black text-gray-800 text-lg">Ajouter un signalement manuel</h2>
-            <p className="text-gray-500 text-sm">Enregistrez un signalement reçu par WhatsApp ou autre</p>
-
-            {/* Succès */}
+          <div className="space-y-4 max-w-md mx-auto">
+            <h2 className="font-black text-gray-800 text-base text-center">Ajout manuel</h2>
             {formSucces && (
-              <div className="bg-green-100 border border-green-300 rounded-2xl p-4 flex items-center gap-3">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-                <p className="text-green-700 font-bold">Signalement ajouté avec succès !</p>
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center text-green-700">
+                <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                <p className="font-semibold">Signalement ajouté</p>
               </div>
             )}
-
-            {/* Nom de l'agent/signaleur */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Nom du signaleur *</label>
-              <input
-                className="input-terrain"
-                placeholder="Ex: Ahmed - Cuisine"
-                value={formAgentNom}
-                onChange={(e) => setFormAgentNom(e.target.value)}
-              />
-            </div>
-
-            {/* Type */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Type de problème *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][]).map(([key, label]) => (
-                  <button
-                    key={key}
-                    className={`choix-card ${formType === key ? "selected" : ""}`}
-                    onClick={() => setFormType(key)}
-                  >
-                    <span className="text-xl mr-2">{ICONE[key]}</span>
-                    {label}
-                  </button>
-                ))}
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-4">
+              <select className="input-terrain" value={formType ?? ""} onChange={e => setFormType(e.target.value as TypeProbleme)}><option value="">Type *</option>{Object.entries(LIBELLES_PROBLEMES).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <select className="input-terrain" value={formZone ?? ""} onChange={e => setFormZone(e.target.value as ZoneUsine)}><option value="">Zone *</option>{Object.entries(LIBELLES_ZONES).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select>
+              <input className="input-terrain" placeholder="Nom de l'agent *" value={formAgentNom} onChange={e => setFormAgentNom(e.target.value)} />
+              <textarea className="input-terrain resize-none" rows={3} placeholder="Commentaire" value={formCommentaire} onChange={e => setFormCommentaire(e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <button className="btn-terrain btn-secondary" onClick={() => { if (typeof window !== "undefined") { const input = document.createElement("input"); input.type = "file"; input.accept = "image/*"; input.onchange = (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { const r = new FileReader(); r.onload = () => setFormPhoto(r.result as string); r.readAsDataURL(f); } }; input.click(); } }}><Camera className="w-5 h-5 mx-auto" /> Photo</button>
+                <button className="btn-terrain btn-secondary" onClick={() => setFormPhoto(null)} disabled={!formPhoto}><X className="w-5 h-5 mx-auto" /> Retirer</button>
               </div>
+              {formPhoto && <img src={formPhoto} alt="Aperçu" className="max-h-40 rounded-xl mx-auto" />}
+              <button className="btn-terrain btn-primary w-full" onClick={handleAjoutManuel} disabled={!formType || !formZone || !formAgentNom.trim() || chargement}>
+                <Send className="w-5 h-5" /> Enregistrer
+              </button>
             </div>
-
-            {/* Zone */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Zone *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][]).map(([key, label]) => (
-                  <button
-                    key={key}
-                    className={`choix-card justify-center ${formZone === key ? "selected" : ""}`}
-                    onClick={() => setFormZone(key)}
-                  >
-                    <MapPin className="w-4 h-4 mr-1" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Commentaire */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Commentaire</label>
-              <textarea
-                className="input-terrain resize-none"
-                rows={3}
-                placeholder="Details du signalement..."
-                value={formCommentaire}
-                onChange={(e) => setFormCommentaire(e.target.value)}
-              />
-            </div>
-
-            {/* Bouton */}
-            <button
-              className={`btn-terrain w-full text-lg ${formType && formZone && formAgentNom.trim() ? "btn-primary" : "bg-gray-300 text-gray-500"}`}
-              style={{ minHeight: 60 }}
-              disabled={!formType || !formZone || !formAgentNom.trim()}
-              onClick={handleAjoutManuel}
-            >
-              <Send className="w-5 h-5" />
-              Enregistrer le signalement
-            </button>
           </div>
         )}
+
       </main>
 
-      {/* Modal photo */}
-      {photoPreview && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoPreview} alt="Photo" className="max-w-full max-h-full rounded-2xl" />
-          <button className="absolute top-5 right-5 bg-white text-black rounded-full p-2 shadow-xl" onClick={() => setPhotoPreview(null)}>
-            <X className="w-6 h-6" />
+      {/* Navigation onglets */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex justify-around">
+        {[
+          { id: "notifs", label: "Alertes", icon: nonLues > 0 ? <BellRing className="w-6 h-6" /> : <Bell className="w-6 h-6" />, badge: nonLues },
+          { id: "graphiques", label: "Graphiques", icon: <BarChart2 className="w-6 h-6" /> },
+          { id: "liste", label: "Liste", icon: <List className="w-6 h-6" /> },
+          { id: "qr", label: "QR Code", icon: <QrCode className="w-6 h-6" /> },
+          { id: "ajouter", label: "Ajouter", icon: <PlusCircle className="w-6 h-6" /> },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setOnglet(tab.id as Onglet)} className={`flex flex-col items-center gap-1 text-xs transition-colors ${onglet === tab.id ? "text-green-600" : "text-gray-400 hover:text-green-600"}`}>
+            <div className="relative">{tab.icon}{tab.badge && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">{tab.badge}</span>}</div>
+            <span>{tab.label}</span>
           </button>
-        </div>
-      )}
+        ))}
+      </nav>
     </div>
   );
 }

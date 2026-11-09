@@ -1,9 +1,8 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import { useState } from "react";
-import { saveSession } from "@/lib/store";
-import { generateId } from "@/lib/store";
-import { getAgentByPhone, saveAgent } from "@/lib/auth";
+import { useState, useEffect } from "react";
+import { signInWithPhone, signUpAgent, onAuthChange } from "@/lib/auth";
 import { Agent } from "@/lib/types";
 import {
   Phone,
@@ -15,6 +14,7 @@ import {
   ChevronLeft,
   Eye,
   EyeOff,
+  Loader2,
 } from "lucide-react";
 
 interface Props {
@@ -23,92 +23,100 @@ interface Props {
 
 type Ecran =
   | "accueil"
-  | "connexion_choix"   // choisir agent ou admin pour se connecter
-  | "connexion_form"    // formulaire connexion
-  | "inscription_choix" // choisir agent ou admin pour s'inscrire
-  | "inscription_form"; // formulaire inscription
+  | "connexion_choix"
+  | "connexion_form"
+  | "inscription_choix"
+  | "inscription_form"
+  | "otp_sent";
 
 export default function AuthPage({ onLogin }: Props) {
   const [ecran, setEcran] = useState<Ecran>("accueil");
   const [roleChoisi, setRoleChoisi] = useState<"agent" | "admin">("agent");
   const [telephone, setTelephone] = useState("");
   const [nom, setNom] = useState("");
-  const [codeAdmin, setCodeAdmin] = useState("");
-  const [voirCode, setVoirCode] = useState(false);
+  const [codeOtp, setCodeOtp] = useState("");
   const [erreur, setErreur] = useState("");
-
-  // Code d'accès admin (modifiable ici)
-  const CODE_ADMIN = "eco2024";
+  const [chargement, setChargement] = useState(false);
 
   const reset = () => {
     setTelephone("");
     setNom("");
-    setCodeAdmin("");
+    setCodeOtp("");
     setErreur("");
-    setVoirCode(false);
+    setChargement(false);
   };
 
   const normaliser = (tel: string) =>
     tel.replace(/\s/g, "").replace(/^216/, "");
 
-  // ── CONNEXION ─────────────────────────────────────────────
+  // Listen to auth changes (Supabase session)
+  useEffect(() => {
+    const unsub = onAuthChange((agent) => {
+      if (agent) onLogin(agent);
+    });
+    return () => unsub();
+  }, [onLogin]);
+
+  // CONNEXION
   const handleConnexion = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
-      setErreur("Numéro invalide (8 chiffres minimum)");
+      setErreur("Numero invalide (8 chiffres minimum)");
       return;
     }
-    const agent = await getAgentByPhone(tel);
-    if (!agent) {
-      setErreur("Compte introuvable. Vérifiez votre numéro ou créez un compte.");
-      return;
+    setChargement(true);
+    setErreur("");
+    const { error } = await signInWithPhone(tel);
+    setChargement(false);
+    if (error) {
+      setErreur(error);
+    } else {
+      setEcran("otp_sent");
     }
-    if (agent.role !== roleChoisi) {
-      setErreur(
-        roleChoisi === "admin"
-          ? "Ce numéro n'est pas un compte administrateur."
-          : "Ce numéro est enregistré en tant qu'administrateur."
-      );
-      return;
-    }
-    saveSession(agent);
-    onLogin(agent);
   };
 
-  // ── INSCRIPTION ───────────────────────────────────────────
+  // INSCRIPTION
   const handleInscription = async () => {
     const tel = normaliser(telephone);
     if (tel.length < 8) {
-      setErreur("Numéro invalide (8 chiffres minimum)");
+      setErreur("Numero invalide (8 chiffres minimum)");
       return;
     }
     if (nom.trim().length < 2) {
-      setErreur("Entrez votre nom complet (minimum 2 caractères)");
+      setErreur("Entrez votre nom complet (minimum 2 caracteres)");
       return;
     }
-    if (roleChoisi === "admin" && codeAdmin !== CODE_ADMIN) {
-      setErreur("Code d'accès administrateur incorrect.");
-      return;
+    setChargement(true);
+    setErreur("");
+    const { error } = await signUpAgent(tel, nom.trim());
+    setChargement(false);
+    if (error) {
+      setErreur(error);
+    } else {
+      setEcran("otp_sent");
     }
-    const existant = await getAgentByPhone(tel);
-    if (existant) {
-      setErreur("Un compte existe déjà avec ce numéro. Connectez-vous.");
-      return;
-    }
-    const agent: Agent = {
-      id: generateId(),
-      telephone: tel,
-      nom: nom.trim(),
-      role: roleChoisi,
-    };
-    await saveAgent(agent);
-    saveSession(agent);
-    onLogin(agent);
   };
 
-  // ══════════════════════════════════════════════════════════
+  // VERIFICATION OTP
+  const handleVerifyOtp = async () => {
+    if (codeOtp.length !== 6) {
+      setErreur("Code a 6 chiffres requis");
+      return;
+    }
+    setChargement(true);
+    setErreur("");
+    const { error } = await supabase.auth.verifyOtp({
+      phone: `+216${normaliser(telephone)}`,
+      token: codeOtp,
+      type: "sms",
+    });
+    setChargement(false);
+    if (error) {
+      setErreur(error.message);
+    }
+  };
+
   // RENDU
-  // ══════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-700 to-green-900 flex flex-col items-center justify-center px-5 py-10">
 
@@ -123,13 +131,14 @@ export default function AuthPage({ onLogin }: Props) {
         </p>
       </div>
 
-      {/* ── ACCUEIL ──────────────────────────────────────── */}
+      {/* ACCUEIL */}
       {ecran === "accueil" && (
         <div className="w-full max-w-sm space-y-4">
           <button
             className="btn-terrain btn-primary w-full text-lg shadow-xl"
             style={{ minHeight: 72 }}
             onClick={() => { reset(); setEcran("connexion_choix"); }}
+            disabled={chargement}
           >
             <LogIn className="w-6 h-6" />
             Se connecter
@@ -138,17 +147,18 @@ export default function AuthPage({ onLogin }: Props) {
             className="btn-terrain btn-secondary w-full text-lg bg-white shadow-xl"
             style={{ minHeight: 72 }}
             onClick={() => { reset(); setEcran("inscription_choix"); }}
+            disabled={chargement}
           >
             <UserPlus className="w-6 h-6" />
-            Créer un compte
+            Creer un compte
           </button>
           <p className="text-green-300 text-xs text-center pt-2">
-            Application gratuite – Usine Environnementale
+            Application gratuite - Usine Environnementale
           </p>
         </div>
       )}
 
-      {/* ── CHOIX RÔLE CONNEXION ─────────────────────────── */}
+      {/* CHOIX ROLE CONNEXION */}
       {ecran === "connexion_choix" && (
         <div className="w-full max-w-sm">
           <BoutonRetour onClick={() => setEcran("accueil")} />
@@ -163,7 +173,7 @@ export default function AuthPage({ onLogin }: Props) {
                 onClick={() => setRoleChoisi("agent")}
                 icone={<HardHat className="w-8 h-8" />}
                 titre="Agent"
-                desc="Terrain / Opérateur"
+                desc="Terrain / Operateur"
                 couleur="green"
               />
               <CarteRole
@@ -178,6 +188,7 @@ export default function AuthPage({ onLogin }: Props) {
             <button
               className="btn-terrain btn-primary w-full mt-4"
               onClick={() => { setErreur(""); setEcran("connexion_form"); }}
+              disabled={chargement}
             >
               Continuer
             </button>
@@ -185,7 +196,7 @@ export default function AuthPage({ onLogin }: Props) {
         </div>
       )}
 
-      {/* ── FORMULAIRE CONNEXION ──────────────────────────── */}
+      {/* FORMULAIRE CONNEXION */}
       {ecran === "connexion_form" && (
         <div className="w-full max-w-sm">
           <BoutonRetour onClick={() => { reset(); setEcran("connexion_choix"); }} />
@@ -193,11 +204,11 @@ export default function AuthPage({ onLogin }: Props) {
             <BadgeRole role={roleChoisi} />
             <h2 className="text-xl font-black text-gray-800 mb-1 mt-3">Connexion</h2>
             <p className="text-gray-500 text-sm mb-5">
-              Entrez votre numéro de téléphone
+              Entrez votre numero de telephone
             </p>
 
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Numéro de téléphone
+              Numero de telephone
             </label>
             <div className="flex items-center gap-2 mb-5">
               <div className="flex items-center gap-1 bg-gray-100 rounded-xl px-3 py-3 text-sm font-semibold text-gray-600 whitespace-nowrap">
@@ -213,14 +224,15 @@ export default function AuthPage({ onLogin }: Props) {
                 onChange={(e) => { setTelephone(e.target.value); setErreur(""); }}
                 onKeyDown={(e) => e.key === "Enter" && handleConnexion()}
                 autoFocus
+                disabled={chargement}
               />
             </div>
 
             {erreur && <MessageErreur texte={erreur} />}
 
-            <button className="btn-terrain btn-primary w-full" onClick={handleConnexion}>
-              <LogIn className="w-5 h-5" />
-              Se connecter
+            <button className="btn-terrain btn-primary w-full" onClick={handleConnexion} disabled={chargement}>
+              {chargement ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+              {chargement ? "Envoi..." : "Se connecter"}
             </button>
 
             <p className="text-center text-sm text-gray-500 mt-4">
@@ -229,19 +241,19 @@ export default function AuthPage({ onLogin }: Props) {
                 className="text-green-600 font-bold underline"
                 onClick={() => { reset(); setRoleChoisi(roleChoisi); setEcran("inscription_form"); }}
               >
-                Créer un compte
+                Creer un compte
               </button>
             </p>
           </div>
         </div>
       )}
 
-      {/* ── CHOIX RÔLE INSCRIPTION ───────────────────────── */}
+      {/* CHOIX ROLE INSCRIPTION */}
       {ecran === "inscription_choix" && (
         <div className="w-full max-w-sm">
           <BoutonRetour onClick={() => setEcran("accueil")} />
           <div className="bg-white rounded-3xl shadow-2xl p-6">
-            <h2 className="text-xl font-black text-gray-800 mb-1">Créer un compte</h2>
+            <h2 className="text-xl font-black text-gray-800 mb-1">Creer un compte</h2>
             <p className="text-gray-500 text-sm mb-6">
               Choisissez votre type de compte
             </p>
@@ -251,7 +263,7 @@ export default function AuthPage({ onLogin }: Props) {
                 onClick={() => setRoleChoisi("agent")}
                 icone={<HardHat className="w-8 h-8" />}
                 titre="Agent"
-                desc="Terrain / Opérateur"
+                desc="Terrain / Operateur"
                 couleur="green"
               />
               <CarteRole
@@ -266,6 +278,7 @@ export default function AuthPage({ onLogin }: Props) {
             <button
               className="btn-terrain btn-primary w-full mt-4"
               onClick={() => { setErreur(""); setEcran("inscription_form"); }}
+              disabled={chargement}
             >
               Continuer
             </button>
@@ -273,16 +286,14 @@ export default function AuthPage({ onLogin }: Props) {
         </div>
       )}
 
-      {/* ── FORMULAIRE INSCRIPTION ────────────────────────── */}
+      {/* FORMULAIRE INSCRIPTION */}
       {ecran === "inscription_form" && (
         <div className="w-full max-w-sm">
-          <BoutonRetour
-            onClick={() => { reset(); setEcran("inscription_choix"); }}
-          />
+          <BoutonRetour onClick={() => { reset(); setEcran("inscription_choix"); }} />
           <div className="bg-white rounded-3xl shadow-2xl p-6">
             <BadgeRole role={roleChoisi} />
             <h2 className="text-xl font-black text-gray-800 mb-1 mt-3">
-              Créer un compte
+              Creer un compte
             </h2>
             <p className="text-gray-500 text-sm mb-5">
               Remplissez vos informations
@@ -299,11 +310,12 @@ export default function AuthPage({ onLogin }: Props) {
               value={nom}
               onChange={(e) => { setNom(e.target.value); setErreur(""); }}
               autoFocus
+              disabled={chargement}
             />
 
-            {/* Téléphone */}
+            {/* Telephone */}
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Numéro de téléphone
+              Numero de telephone
             </label>
             <div className="flex items-center gap-2 mb-4">
               <div className="flex items-center gap-1 bg-gray-100 rounded-xl px-3 py-3 text-sm font-semibold text-gray-600 whitespace-nowrap">
@@ -317,6 +329,7 @@ export default function AuthPage({ onLogin }: Props) {
                 placeholder="2X XXX XXX"
                 value={telephone}
                 onChange={(e) => { setTelephone(e.target.value); setErreur(""); }}
+                disabled={chargement}
               />
             </div>
 
@@ -324,26 +337,19 @@ export default function AuthPage({ onLogin }: Props) {
             {roleChoisi === "admin" && (
               <>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Code d&apos;accès administrateur
+                  Code d'acces administrateur
                 </label>
                 <div className="relative mb-4">
                   <input
                     className="input-terrain pr-12"
-                    type={voirCode ? "text" : "password"}
+                    type="password"
                     placeholder="Code secret"
-                    value={codeAdmin}
-                    onChange={(e) => { setCodeAdmin(e.target.value); setErreur(""); }}
+                    value={codeOtp}
+                    onChange={(e) => { setCodeOtp(e.target.value); setErreur(""); }}
                   />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                    onClick={() => setVoirCode(!voirCode)}
-                  >
-                    {voirCode ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
                 </div>
                 <p className="text-xs text-gray-400 mb-4 -mt-2">
-                  Demandez ce code à votre responsable informatique.
+                  Demandez ce code a votre responsable informatique.
                 </p>
               </>
             )}
@@ -353,13 +359,14 @@ export default function AuthPage({ onLogin }: Props) {
             <button
               className="btn-terrain btn-primary w-full"
               onClick={handleInscription}
+              disabled={chargement}
             >
-              <UserPlus className="w-5 h-5" />
-              Créer mon compte
+              {chargement ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserPlus className="w-5 h-5" />}
+              {chargement ? "Envoi..." : "Creer mon compte"}
             </button>
 
             <p className="text-center text-sm text-gray-500 mt-4">
-              Déjà un compte ?{" "}
+              Deja un compte ?{" "}
               <button
                 className="text-green-600 font-bold underline"
                 onClick={() => { reset(); setEcran("connexion_form"); }}
@@ -370,18 +377,57 @@ export default function AuthPage({ onLogin }: Props) {
           </div>
         </div>
       )}
+
+      {/* OTP ENVOYE */}
+      {ecran === "otp_sent" && (
+        <div className="w-full max-w-sm">
+          <BoutonRetour onClick={() => { reset(); setEcran(roleChoisi === "admin" ? "inscription_choix" : "connexion_choix"); }} />
+          <div className="bg-white rounded-3xl shadow-2xl p-6 text-center">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Phone className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-xl font-black text-gray-800 mb-2">Code envoye</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              Un code a 6 chiffres a ete envoye par SMS au <span className="font-semibold">+216 {telephone}</span>
+            </p>
+
+            <label className="block text-sm font-semibold text-gray-700 mb-2 text-left">Code de verification</label>
+            <input
+              className="input-terrain text-center text-2xl tracking-widest mb-4"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="... ... ... ... ... ..."
+              value={codeOtp}
+              onChange={(e) => { setCodeOtp(e.target.value.slice(0, 6)); setErreur(""); }}
+              autoFocus
+            />
+
+            {erreur && <MessageErreur texte={erreur} />}
+
+            <button className="btn-terrain btn-primary w-full" onClick={handleVerifyOtp} disabled={chargement || codeOtp.length !== 6}>
+              {chargement ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+              {chargement ? "Verification..." : "Valider le code"}
+            </button>
+
+            <p className="text-center text-sm text-gray-500 mt-4">
+              Pas recu ?{" "}
+              <button className="text-green-600 font-bold underline" onClick={() => { setEcran(roleChoisi === "admin" ? "inscription_form" : "connexion_form"); }}>
+                Renvoyer
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Sous-composants ──────────────────────────────────────────
+// Sous-composants
 
 function BoutonRetour({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2 text-green-200 hover:text-white font-semibold text-sm mb-4 transition-colors"
-    >
+    <button onClick={onClick} className="flex items-center gap-2 text-green-200 hover:text-white font-semibold text-sm mb-4 transition-colors">
       <ChevronLeft className="w-5 h-5" />
       Retour
     </button>
@@ -390,13 +436,11 @@ function BoutonRetour({ onClick }: { onClick: () => void }) {
 
 function BadgeRole({ role }: { role: "agent" | "admin" }) {
   return (
-    <div
-      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
-        role === "admin"
-          ? "bg-blue-100 text-blue-700"
-          : "bg-green-100 text-green-700"
-      }`}
-    >
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
+      role === "admin"
+        ? "bg-blue-100 text-blue-700"
+        : "bg-green-100 text-green-700"
+    }`}>
       {role === "admin" ? (
         <ShieldCheck className="w-3.5 h-3.5" />
       ) : (
@@ -458,3 +502,6 @@ function MessageErreur({ texte }: { texte: string }) {
     </div>
   );
 }
+
+// Import supabase for OTP verification
+import { supabase } from "@/lib/supabase";
