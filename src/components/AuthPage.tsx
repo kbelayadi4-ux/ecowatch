@@ -234,7 +234,7 @@ export default function AuthPage({ onLogin }: Props) {
               Pas encore de compte ?{" "}
               <button
                 className="text-green-600 font-bold underline"
-                onClick={() => { reset(); setRoleChoisi(roleChoisi); setEcran("inscription_form"); }}
+                onClick={() => { reset(); setEcran("inscription_form"); }}
               >
                 Creer un compte
               </button>
@@ -252,23 +252,15 @@ export default function AuthPage({ onLogin }: Props) {
             <p className="text-gray-500 text-sm mb-6">
               Choisissez votre type de compte
             </p>
-            <div className="grid grid-cols-2 gap-4 mb-2">
-              <CarteRole
-                actif={roleChoisi === "agent"}
-                onClick={() => setRoleChoisi("agent")}
-                icone={<HardHat className="w-8 h-8" />}
-                titre="Agent"
-                desc="Terrain / Operateur"
-                couleur="green"
-              />
-              <CarteRole
-                actif={roleChoisi === "admin"}
-                onClick={() => setRoleChoisi("admin")}
-                icone={<ShieldCheck className="w-8 h-8" />}
-                titre="Admin"
-                desc="Direction / Responsable"
-                couleur="blue"
-              />
+            <div className="mb-2 p-4 bg-green-50 border border-green-200 rounded-2xl flex items-start gap-3">
+              <HardHat className="w-8 h-8 text-green-700 flex-shrink-0" />
+              <div>
+                <p className="font-black text-base text-green-800">Agent terrain</p>
+                <p className="text-xs text-green-700 opacity-80 mt-0.5">
+                  Le compte est cree avec le role Agent. Le role administrateur
+                  est attribue uniquement par l&apos;equipe technique.
+                </p>
+              </div>
             </div>
             <button
               className="btn-terrain btn-primary w-full mt-4"
@@ -286,7 +278,7 @@ export default function AuthPage({ onLogin }: Props) {
         <div className="w-full max-w-sm">
           <BoutonRetour onClick={() => { reset(); setEcran("inscription_choix"); }} />
           <div className="bg-white rounded-3xl shadow-2xl p-6">
-            <BadgeRole role={roleChoisi} />
+            <BadgeRole role="agent" />
             <h2 className="text-xl font-black text-gray-800 mb-1 mt-3">
               Creer un compte
             </h2>
@@ -327,13 +319,6 @@ export default function AuthPage({ onLogin }: Props) {
                 disabled={chargement}
               />
             </div>
-
-            {roleChoisi === "admin" && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-700">
-                <p className="font-semibold mb-1">Compte administrateur</p>
-                <p>Le role admin est attribue par l'equipe technique via Supabase Dashboard.</p>
-              </div>
-            )}
 
             {erreur && <MessageErreur texte={erreur} />}
 

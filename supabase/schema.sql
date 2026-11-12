@@ -33,27 +33,16 @@ alter table public.observations enable row level security;
 alter table public.agents enable row level security;
 alter table public.notifs enable row level security;
 
--- Policies (idempotent). App uses anon key + phone-based accounts (no Supabase Auth),
--- so role-based RLS cannot be enforced securely here. These policies allow anon access
--- required by the current app; restrict via Supabase Auth if stronger security is needed.
-drop policy if exists "agents_read_all" on public.agents;
-create policy "agents_read_all" on public.agents for select using (true);
-drop policy if exists "agents_insert" on public.agents;
-create policy "agents_insert" on public.agents for insert with check (true);
-drop policy if exists "agents_update_own" on public.agents;
-create policy "agents_update_own" on public.agents for update using (true);
-
-drop policy if exists "obs_read_all" on public.observations;
-create policy "obs_read_all" on public.observations for select using (true);
-drop policy if exists "obs_insert" on public.observations;
-create policy "obs_insert" on public.observations for insert with check (true);
-
-drop policy if exists "notifs_read_all" on public.notifs;
-create policy "notifs_read_all" on public.notifs for select using (true);
-drop policy if exists "notifs_insert" on public.notifs;
-create policy "notifs_insert" on public.notifs for insert with check (true);
-drop policy if exists "notifs_update" on public.notifs;
-create policy "notifs_update" on public.notifs for update using (true);
+-- Politiques RLS : NE PAS en declarer ici.
+-- Ce fichier ne pose que la structure. Les politiques securisees sont definies dans :
+--   003_secure_rls.sql   -> politiques de acces
+--   005_secure_cleanup.sql -> purge des politiques permissives + durcissement
+--   006_agent_signup_trigger.sql -> creation du profil agent apres OTP
+--
+-- Historique : ce fichier creait des politiques `using (true)` / `with check (true)`.
+-- En PostgreSQL, plusieurs politiques PERMISSIVE sont combinees par un OU logique :
+-- une seule politique permissive suffisait a neutraliser toutes les politiques
+-- de securite. Elles ont ete supprimees (voir 005). Ne jamais les reintroduire.
 
 create index if not exists idx_observations_agent_id on public.observations(agent_id);
 create index if not exists idx_observations_date on public.observations(date_creation desc);
