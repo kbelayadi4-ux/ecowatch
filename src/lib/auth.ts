@@ -89,12 +89,15 @@ export function onAuthChange(callback: (agent: Agent | null) => void) {
 }
 
 /**
- * Check if current user is admin (reads from app_metadata.role in JWT)
+ * Check if current user is admin.
+ *
+ * Source de verite : `public.agents.role`, relayee par `getCurrentAgent()`.
+ * `app_metadata.role` n'est qu'un cache d'affichage : il ne doit jamais
+ * servir a autoriser une action (voir supabase/migrations/008).
  */
 export async function isCurrentUserAdmin(): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
-  return user.app_metadata?.role === "admin";
+  const agent = await getCurrentAgent();
+  return agent?.role === "admin";
 }
 
 /**

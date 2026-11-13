@@ -64,6 +64,14 @@ values
   ('test-admin',   '00000000-0000-0000-0000-0000000000a9', '10000009', 'Admin SCG', 'admin')
 on conflict (id) do nothing;
 
+-- Comptes Auth correspondants : sans eux, le cache app_metadata ne peut pas etre verifie.
+insert into auth.users (id, phone, raw_user_meta_data, raw_app_meta_data)
+values
+  ('00000000-0000-0000-0000-0000000000a1', '+21610000001', '{"nom":"Agent A"}', '{}'),
+  ('00000000-0000-0000-0000-0000000000a2', '+21610000002', '{"nom":"Agent B"}', '{}'),
+  ('00000000-0000-0000-0000-0000000000a9', '+21610000009', '{"nom":"Admin SCG"}', '{}')
+on conflict (id) do nothing;
+
 insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, commentaire, zone, date_creation)
 values
   ('test-obs-a', 'test-agent-a', 'Agent A', '10000001', 'fuite_huile', 'A', 'cru',    now()),
@@ -350,5 +358,284 @@ begin
 end $$;
 
 reset role;
+
+-- ============================================================
+-- 15. A1 — l'administrateur peut marquer une notification comme lue
+-- ============================================================
+insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+values
+  ('test-obs-a',  'test-agent-a', 'Agent A',   '10000001', 'fuite_huile', 'cru'),
+  ('test-obs-b',  'test-agent-b', 'Agent B',   '10000002', 'fuite_eau',   'ciment')
+on conflict (id) do nothing;
+
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+
+do $do$
+declare
+  v_rows int := -1;
+  v_stored boolean := null;
+begin
+  update public.notifs set lu = false where obs_id in ('test-obs-a', 'test-obs-b');
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows >= 2, 'admin remet les notifications a non lues');
+
+  update public.notifs set lu = true where obs_id = 'test-obs-a';
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows = 1, 'admin marque une notification comme lue');
+
+  select lu into v_stored from public.notifs where obs_id = 'test-obs-a';
+  perform pg_temp.check(v_stored = true, 'notification reellement enregistree comme lue');
+
+  update public.notifs set lu = false;
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows >= 2, 'admin marque tout non lu');
+
+  update public.notifs set lu = true;
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows >= 2, 'admin marque tout comme lu');
+
+  select count(*) into v_rows from public.notifs where lu = false;
+  perform pg_temp.check(v_rows = 0, 'toutes les notifications sont lues');
+end $do$;
+
+-- ============================================================
+-- 16. A1 — un agent ne touche pas les notifications d'un autre
+-- ============================================================
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');
+
+do $do$
+declare
+  v_rows int := -1;
+begin
+  update public.notifs set lu = false where obs_id = 'test-obs-b';
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows = 0, 'agent A ne modifie pas la notification de agent B');
+
+  update public.notifs set lu = false where obs_id = 'test-obs-a';
+  get diagnostics v_rows = row_count;
+  perform pg_temp.check(v_rows = 1, 'agent A modifie sa propre notification');
+end $do$;
+
+-- ============================================================
+-- 17. A2 — is_admin() suit agents.role, pas le JWT
+-- ============================================================
+reset role;
+
+-- 17a. JWT admin sur une ligne agent : aucun droit
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'admin');
+
+do $do$
+declare
+  v_admin boolean;
+  v_visible int;
+begin
+  select public.is_admin() into v_admin;
+  perform pg_temp.check(v_admin = false, 'JWT admin sur une ligne agent => is_admin false');
+
+  select count(*) into v_visible from public.observations where id = 'test-obs-b';
+  perform pg_temp.check(v_visible = 0, 'ancien JWT admin ne voit pas l observation de agent B');
+end $do$;
+
+-- 17b. JWT agent sur une ligne admin : droits admin
+reset role;
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'agent');
+
+do $do$
+declare
+  v_admin boolean;
+  v_visible int;
+begin
+  select public.is_admin() into v_admin;
+  perform pg_temp.check(v_admin = true, 'agents.role=admin => is_admin true quel que soit le JWT');
+
+  select count(*) into v_visible from public.observations;
+  perform pg_temp.check(v_visible >= 2, 'admin voit toutes les observations');
+
+  select count(*) into v_visible from public.agents;
+  perform pg_temp.check(v_visible >= 3, 'admin lit tous les profils agents (pas de recursion RLS)');
+
+  perform pg_temp.check(public.current_agent_role() = 'admin', 'current_agent_role retourne admin');
+end $do$;
+
+-- ============================================================
+-- 18. A2 — un agent ne peut pas s'auto-promouvoir
+-- ============================================================
+reset role;
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');
+
+do $do$
+declare
+  v_ok boolean := false;
+begin
+  begin
+    perform public.admin_set_role('10000002', 'admin');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+
+  perform pg_temp.check(not v_ok, 'agent ne peut pas appeler admin_set_role');
+end $do$;
+
+-- ============================================================
+-- 19. A2 — promotion puis retrogradation effectives immediatement
+-- ============================================================
+reset role;
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+
+do $do$
+declare
+  v_role text;
+begin
+  perform public.admin_set_role('10000002', 'admin');
+
+  select role into v_role from public.agents where telephone = '10000002';
+  perform pg_temp.check(v_role = 'admin', 'promotion agent -> admin enregistree en base');
+end $do$;
+
+-- La table auth.users n'est pas lisible par un client (comme sur Supabase) :
+-- la verification du cache se fait en tant que postgres.
+reset role;
+
+do $do$
+declare
+  v_meta text;
+begin
+  select raw_app_meta_data ->> 'role' into v_meta
+  from auth.users where id = '00000000-0000-0000-0000-0000000000a2';
+  perform pg_temp.check(v_meta = 'admin', 'cache app_metadata synchronise a la promotion');
+end $do$;
+
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+
+do $do$
+declare
+  v_role text;
+begin
+  perform public.admin_set_role('10000002', 'agent');
+
+  select role into v_role from public.agents where telephone = '10000002';
+  perform pg_temp.check(v_role = 'agent', 'retrogradation admin -> agent enregistree en base');
+end $do$;
+
+reset role;
+
+do $do$
+declare
+  v_meta text;
+begin
+  select raw_app_meta_data ->> 'role' into v_meta
+  from auth.users where id = '00000000-0000-0000-0000-0000000000a2';
+  perform pg_temp.check(v_meta = 'agent', 'cache app_metadata synchronise a la retrogradation');
+end $do$;
+
+-- 19b. les droits suivent immediatement la retrogradation
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a2', 'agent');
+
+do $do$
+declare
+  v_admin boolean;
+  v_visible int;
+begin
+  select public.is_admin() into v_admin;
+  perform pg_temp.check(v_admin = false, 'retrogradation effective sans attendre le JWT');
+
+  select count(*) into v_visible from public.observations where id = 'test-obs-a';
+  perform pg_temp.check(v_visible = 0, 'ancien admin retrograde ne voit plus les observations de agent A');
+end $do$;
+
+-- ============================================================
+-- 20. A2 — garde-fous de admin_set_role
+-- ============================================================
+-- Fixture creee en tant que postgres : aucun client ne peut inserer dans agents.
+reset role;
+
+insert into public.agents (id, telephone, nom, role)
+values ('test-non-lie', '10000077', 'Non lie', 'agent')
+on conflict (id) do nothing;
+
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+
+do $do$
+declare
+  v_ok boolean;
+begin
+  begin
+    perform public.admin_set_role('00000000', 'admin');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  perform pg_temp.check(not v_ok, 'telephone inconnu refuse');
+
+  begin
+    perform public.admin_set_role('10000001', 'superadmin');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  perform pg_temp.check(not v_ok, 'role invalide refuse');
+
+  begin
+    perform public.admin_set_role('10000077', 'admin');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  perform pg_temp.check(not v_ok, 'agent sans compte Auth refuse');
+end $do$;
+
+-- 20b. dernier administrateur protegé
+reset role;
+savepoint s_last_admin;
+
+update public.agents set role = 'agent' where role = 'admin' and id <> 'test-admin';
+
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+
+do $do$
+declare
+  v_ok boolean := false;
+begin
+  begin
+    perform public.admin_set_role('10000009', 'agent');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  perform pg_temp.check(not v_ok, 'retrogradation du dernier administrateur refusee');
+end $do$;
+
+reset role;
+rollback to savepoint s_last_admin;
+release savepoint s_last_admin;
+
+-- ============================================================
+-- 21. A2 — le trigger 006 impose toujours agent
+-- ============================================================
+reset role;
+
+do $do$
+declare
+  v_role text;
+begin
+  insert into auth.users (id, phone, raw_user_meta_data)
+  values ('44444444-4444-4444-4444-444444444444', '+21644440000', '{"nom":"Nouveau","role":"admin"}');
+
+  select role into v_role
+  from public.agents where auth_user_id = '44444444-4444-4444-4444-444444444444';
+
+  perform pg_temp.check(v_role = 'agent', 'nouvelle inscription = agent meme si le client envoie admin');
+end $do$;
 
 rollback;

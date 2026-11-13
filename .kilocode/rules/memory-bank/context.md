@@ -34,7 +34,17 @@ existantes sont conservées.
 - [x] **Tests SQL exécutés réellement** — `supabase/tests/run-rls-tests.mjs`
   - PostgreSQL 17 embarqué (PGlite), `bun run test:rls`
   - Démonstration avant/après : agent A voit 2 observations avant 005, 1 après
-  - 25 assertions d'isolation, d'écriture, d'élévation de privilèges et d'inscription
+  - 51 assertions d'isolation, d'écriture, d'élévation de privilèges, de rôles
+    et d'inscription
+  - Persistance inter-transaction vérifiée (marquage « lu » survive au commit)
+  - Idempotence vérifiée sur 3 exécutions complètes des 9 migrations
+- [x] **A1 + A2 du 13/11/2026**
+  - `supabase/migrations/007_fix_admin_notifications.sql` : politique
+    `notifs_update_admin`, l'admin peut de nouveau marquer les notifications lues.
+  - `supabase/migrations/008_unify_admin_roles.sql` : `is_admin()` lit `agents.role`
+    (plus le JWT), `current_agent_role()`, et `admin_set_role()` — unique mécanisme
+    serveur de promotion / rétrogradation, avec synchronisation de `app_metadata`
+    et garde-fou « dernier administrateur ».
 
 ## Current Structure
 
@@ -61,10 +71,14 @@ existantes sont conservées.
 
 ## Règles de sécurité
 
-- Le rôle `admin` ne s'attribue que via l'API Admin Supabase (`service_role`).
+- **Source de vérité du rôle : `public.agents.role`.** `auth.users.app_metadata.role`
+  n'est qu'un cache d'affichage : il n'autorise plus aucune action (migration 008).
+- Le rôle `admin` ne s'attribue que par `public.admin_set_role(telephone, role)`,
+  elle-même réservée à un administrateur authentifié, ou directement en SQL avec
+  les droits `service_role`.
 - `SUPABASE_SERVICE_ROLE_KEY` ne doit jamais apparaître dans le code client.
-- Toute nouvelle politique RLS doit être ajoutée dans `005_secure_cleanup.sql`
-  ou dans une migration postérieure, jamais dans `schema.sql` sous forme permissive.
+- Toute nouvelle politique RLS doit être ajoutée dans une migration postérieure,
+  jamais dans `schema.sql` sous forme permissive.
 - Les tests SQL se lancent avec `bun run test:rls` avant tout commit touchant le schéma.
 
 ## Configuration Admin
@@ -73,11 +87,19 @@ Le rôle administrateur n'est plus choisi par le client. Il est attribué
 côté serveur, par l'équipe technique :
 
 ```sql
+-- Depuis un compte administrateur déjà existant
+select public.admin_set_role('12345678', 'admin');
+```
+
+ou, en opération de bootstrap :
+
+```sql
 update public.agents set role = 'admin' where telephone = '12345678';
 ```
 
-puis, dans le dashboard Supabase, `Authentication > Users > app_metadata.role = "admin"`
-(la RLS s'appuie sur `app_metadata`).
+`admin_set_role` met à jour `agents.role` **et** synchronise `app_metadata.role`
+(lorsque le rôle exécutant a le droit d'écrire dans `auth.users`). La RLS ne lit
+que `agents.role` : la révocation est donc immédiate, sans attendre l'expiration du JWT.
 
 ## Session History
 
@@ -87,3 +109,6 @@ puis, dans le dashboard Supabase, `Authentication > Users > app_metadata.role = 
 | 2026-03-18 | Application EcoWatch complète – agent + admin dashboard |
 | 2026-11-12 | Audit : RLS contournée par des politiques permissives résiduelles ; inscription OTP sans création de profil agent |
 | 2026-11-12 | Migrations 005 (purge RLS + durcissement) et 006 (trigger d'inscription) ; 25 tests SQL verts sur Postgres embarqué |
+| 2026-11-13 | A1 : migration 007, l'admin peut de nouveau marquer les notifications comme lues |
+| 2026-11-13 | A2 : migration 008, `is_admin()` lit `agents.role`, `admin_set_role()` devient l'unique mécanisme serveur de changement de rôle |
+| 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |

@@ -24,6 +24,7 @@ const BOOTSTRAP = `
     id uuid primary key default gen_random_uuid(),
     phone text unique,
     raw_user_meta_data jsonb not null default '{}'::jsonb,
+    raw_app_meta_data jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now()
   );
 
@@ -59,6 +60,8 @@ const POST_FILES = [
   "supabase/migrations/004_realtime.sql",
   "supabase/migrations/005_secure_cleanup.sql",
   "supabase/migrations/006_agent_signup_trigger.sql",
+  "supabase/migrations/007_fix_admin_notifications.sql",
+  "supabase/migrations/008_unify_admin_roles.sql",
 ];
 
 const notices = [];
@@ -159,13 +162,61 @@ await run(
 const testSql = read("supabase/tests/rls_security.test.sql");
 const ok = await run("supabase/tests/rls_security.test.sql", testSql);
 
+// ------------------------------------------------------------
+// A1 — persistance apres rechargement.
+// Transaction 1 : l'admin marque tout comme lu, puis COMMIT.
+// Transaction 2 : nouvelle transaction, relecture.
+// ------------------------------------------------------------
+await run(
+  "fixtures de persistance A1",
+  `insert into public.agents (id, auth_user_id, telephone, nom, role) values
+     ('p-admin', '00000000-0000-0000-0000-0000000000e9', '17000001', 'Admin P', 'admin')
+   on conflict (id) do nothing;
+   insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone) values
+     ('p-obs-1', 'p-admin', 'Admin P', '17000001', 'fuite_huile', 'cru'),
+     ('p-obs-2', 'p-admin', 'Admin P', '17000001', 'fuite_eau', 'ciment')
+   on conflict (id) do nothing;`
+);
+
+let persistOk = true;
+let persistFailed = false;
+let persistDetail = "";
+try {
+  await db.exec(`
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000e9","app_metadata":{"role":"admin"}}', true);
+    select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000e9', true);
+    update public.notifs set lu = true;
+    commit;
+  `);
+
+  const after = await db.query(
+    `select count(*)::int n from public.notifs where obs_id like 'p-obs-%' and lu = false`
+  );
+  persistDetail = `${after.rows[0].n} notification(s) non lue(s) apres commit`;
+  persistOk = after.rows[0].n === 0;
+} catch (e) {
+  persistOk = false;
+  persistDetail = e.message;
+}
+
+if (!persistOk) {
+  console.error(`  FAIL A1 persistance apres rechargement\n       ${persistDetail}`);
+  persistFailed = true;
+} else {
+  console.log(`  ok  A1 persistance apres rechargement — ${persistDetail}`);
+}
+
 const results = notices.filter((n) => /^(OK|ECHEC)/.test(n));
 for (const r of results) console.log(`       ${r}`);
 
 await db.close();
 
-if (!ok) {
+if (!ok || persistFailed) {
   console.error("\nRESULTAT: ECHEC");
   process.exit(1);
 }
-console.log(`\nRESULTAT: ${results.length} assertions vertes, isolement RLS retabli`);
+console.log(
+  `\nRESULTAT: ${results.length} assertions vertes, persistance A1 verifiee, isolement RLS retabli`
+);
