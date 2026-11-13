@@ -15,6 +15,8 @@
 --     migration 009 (suivi) ou 010 (photos). Si l'objet n'existe pas,
 --     la requête concernée renvoie une erreur « does not exist » :
 --     c'est une information, pas une panne (voir le guide d'audit).
+--   * Sections 15 et 16 : privilèges table/séquence et corps exact des
+--     fonctions et déclencheurs (comparaison avec les fichiers 008 / 009).
 --   * Pour voir l'état réel du schéma sans rien supposer :
 --     section 2b (aperçu des colonnes de public.observations).
 -- ============================================================
@@ -334,6 +336,56 @@ select statut, priorite, count(*) as observations
 from public.observations
 group by statut, priorite
 order by statut, priorite;
+
+
+-- ============================================================
+-- ============================================================
+-- 15. PRIVILEGES SUR LES TABLES DE DONNEES
+--     Attendu : SELECT/INSERT/UPDATE/DELETE pour authenticated,
+--     aucun privilege d ecriture pour anon.
+-- ============================================================
+select table_name, grantee, string_agg(distinct privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and grantee in ('anon', 'authenticated')
+group by table_name, grantee
+order by table_name, grantee;
+
+-- 15b. PRIVILEGES SUR LES SEQUENCES
+select sequence_name, grantee, string_agg(distinct privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_usage_grants
+where object_schema = 'public'
+  and object_type = 'SEQUENCE'
+  and grantee in ('anon', 'authenticated')
+group by sequence_name, grantee
+order by sequence_name, grantee;
+
+
+-- ============================================================
+-- 16. CORPS EXACT DES FONCTIONS CLES
+--     A comparer avec les fichiers 008 / 009 du depot :
+--     empreinte md5 rapide, puis pg_get_functiondef pour le diff.
+-- ============================================================
+select p.proname,
+       md5(pg_get_functiondef(p.oid)) as empreinte_md5,
+       pg_get_function_result(p.oid) as valeur_retour,
+       p.prosecdef as security_definer
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('admin_set_role', 'admin_update_observation', 'obs_impose_agent',
+                    'is_admin', 'current_agent_role')
+order by p.proname;
+
+-- 16b. TRIGGERS DE SUIVI ET DE NOTIFICATION
+select c.relname as table_name, t.tgname as trigger_name, pg_get_triggerdef(t.oid) as definition
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and not t.tgisinternal
+  and c.relname in ('observations', 'notifs', 'agents', 'observation_history')
+order by c.relname, t.tgname;
 
 
 -- ============================================================
