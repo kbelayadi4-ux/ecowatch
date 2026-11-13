@@ -10,6 +10,23 @@ existantes sont conservées.
 
 ## Recently Completed
 
+- [x] **Robustesse du formulaire agent (13/11/2026)**
+  - `handleEnvoyer` enveloppé dans `try/catch/finally` avec verrou anti double-clic
+    (`envoiRef`) : le bouton n'est plus bloqué après un échec.
+  - Le bandeau d'avertissement photo (`avertissement`) est désormais **affiché dans
+    le formulaire**, plus seulement sur l'écran de succès : un format refusé est
+    expliqué à l'utilisateur.
+  - Photo explicitement marquée facultative ; `accept` élargi (HEIC/HEIF) ;
+    formats refusés et fichier vide signalés par un message clair.
+  - `GererAgents.televerserPhotoAdmin` : `notePhoto` (échec d'upload sans perte du
+    signalement) est maintenant affiché au lieu d'être ignoré.
+  - `handleAjoutManuel` / `handlePhotoManuelle` : `try/catch/finally` (plus de
+    chargement figé) et message en cas d'échec d'enregistrement.
+- [x] **Tests unitaires `bun test` (14 tests)** : payload d'insertion avec et sans
+  photo, payload historique, détection d'une base sans migration 009, validation
+  du fichier photo (HEIC, vide, 25 Mo refusé, 8 Mo accepté). Commande :
+  `bun run test:unit`.
+
 - [x] **Finalisation du 13/11/2026 — migrations 009 / 010**
   - `009_suivi_observations.sql` : colonnes `statut`, `priorite`, `assigne_a`,
     `echeance`, `date_cloture`, `numero_suivi`, `photo_path`, `maj_le` ; table
@@ -145,3 +162,4 @@ que `agents.role` : la révocation est donc immédiate, sans attendre l'expirati
 | 2026-11-13 | A2 : migration 008, `is_admin()` lit `agents.role`, `admin_set_role()` devient l'unique mécanisme serveur de changement de rôle |
 | 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |
 | 2026-11-13 | Finalisation complète : suivi des observations (statut, priorité, affectation, échéance, historique), photos Supabase Storage, interfaces Agent/Admin, PWA, documentation direction ; 72 assertions RLS vertes |
+| 2026-11-13 | Robustesse du formulaire d'envoi (verrou double-clic, erreurs affichées, photo facultative/HEIC), affichage de `notePhoto`, 14 tests unitaires, 75 assertions RLS vertes |

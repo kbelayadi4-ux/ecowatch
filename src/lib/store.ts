@@ -47,18 +47,36 @@ export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Formats de fichier acceptés pour une photographie. */
-export const TYPES_IMAGE_AUTORISES = ["image/jpeg", "image/png", "image/webp"];
+/**
+ * Formats acceptés pour une photographie.
+ * `heic`/`heif` sont acceptés (iPhone) : si le navigateur ne sait pas les
+ * décoder, l'image est conservée telle quelle plutôt que bloquée.
+ */
+export const TYPES_IMAGE_AUTORISES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+];
 
-/** Taille maximale après compression (le bucket est configuré à 5 Mo). */
-export const TAILLE_MAX_OCTETS = 5 * 1024 * 1024;
+/** Taille maximale avant compression (le bucket est configuré à 5 Mo). */
+export const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
+
+/** Taille maximale réellement déposée dans le bucket. */
+export const TAILLE_MAX_BUCKET = 5 * 1024 * 1024;
 
 export function validerFichierImage(fichier: File): string | null {
-  if (!TYPES_IMAGE_AUTORISES.includes(fichier.type)) {
-    return "Format non pris en charge (JPEG, PNG ou WebP attendu).";
+  const type = (fichier.type || "").toLowerCase();
+  const extensionOk = /\.(jpe?g|png|webp|heic|heif)$/i.test(fichier.name);
+  if (!type.startsWith("image/") && !extensionOk) {
+    return "Fichier non reconnu comme une image (JPEG, PNG, WebP ou HEIC).";
+  }
+  if (fichier.size === 0) {
+    return "Fichier vide : choisissez une autre photo.";
   }
   if (fichier.size > TAILLE_MAX_OCTETS) {
-    return "Image trop volumineuse (5 Mo maximum).";
+    return "Photo trop volumineuse (20 Mo maximum avant compression).";
   }
   return null;
 }

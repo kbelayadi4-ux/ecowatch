@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
+import { TAILLE_MAX_BUCKET } from "./store";
 import {
   Agent,
   EvenementSuivi,
@@ -202,9 +203,12 @@ export async function updateObservation(
   return { ok: true };
 }
 
-export async function saveObservation(obs: Observation): Promise<{ ok: boolean; erreur?: string }> {
-  const client = exigerClient();
-  const { error } = await client.from("observations").insert({
+/**
+ * Corps d'insertion pour une base sur laquelle la migration 009 est appliquée.
+ * `numero_suivi` est volontairement absent : il est genere par la base.
+ */
+export function payloadObservation(obs: Observation): Record<string, unknown> {
+  return {
     id: obs.id,
     agent_id: obs.agentId,
     agent_nom: obs.agentNom,
@@ -216,11 +220,68 @@ export async function saveObservation(obs: Observation): Promise<{ ok: boolean; 
     photo_path: obs.photoPath ?? null,
     date_creation: obs.dateCreation,
     partage: obs.partage,
-    statut: "nouvelle",
-    priorite: "normale",
-  });
-  if (error) return { ok: false, erreur: error.message };
-  return { ok: true };
+    statut: obs.statut || "nouvelle",
+    priorite: obs.priorite || "normale",
+  };
+}
+
+/**
+ * Corps d'insertion compatible avec une base où la migration 009 n'est pas
+ * encore appliquée (colonnes de suivi et photo_path absentes).
+ */
+export function payloadObservationLegacy(obs: Observation): Record<string, unknown> {
+  return {
+    id: obs.id,
+    agent_id: obs.agentId,
+    agent_nom: obs.agentNom,
+    agent_telephone: obs.agentTelephone,
+    type_probleme: obs.typeProbleme,
+    commentaire: obs.commentaire,
+    zone: obs.zone,
+    photo: obs.photo ?? null,
+    date_creation: obs.dateCreation,
+    partage: obs.partage,
+  };
+}
+
+export interface ResultatEnregistrement {
+  ok: boolean;
+  erreur?: string;
+  /** Vrai si l'insertion a necessité le repli « schéma avant 009 ». */
+  modeDeprecie?: boolean;
+}
+
+/** Vrai si l'erreur indique une base où la migration 009 n'est pas appliquée. */
+export function estErreurSchemaAncien(message: string): boolean {
+  return /column .* does not exist|schema cache|could not find the "/i.test(message);
+}
+
+/**
+ * Enregistre une observation.
+ *
+ * Deux difficultés connues, désormais traitées explicitement :
+ *  1. une base où la migration 009 n'est pas encore appliquée renvoie
+ *     « column "statut" does not exist » : on bascule alors sur le schéma
+ *     historique plutôt que d'échouer ;
+ *  2. toute erreur est renvoyée avec son message technique, pour être
+ *     affichée à l'utilisateur et journalisée.
+ */
+export async function saveObservation(obs: Observation): Promise<ResultatEnregistrement> {
+  const client = exigerClient();
+
+  const premiere = await client.from("observations").insert(payloadObservation(obs));
+  if (!premiere.error) return { ok: true };
+
+  const message = premiere.error.message ?? "";
+  if (!estErreurSchemaAncien(message)) {
+    return { ok: false, erreur: message };
+  }
+
+  const repli = await client.from("observations").insert(payloadObservationLegacy(obs));
+  if (repli.error) {
+    return { ok: false, erreur: repli.error.message ?? message };
+  }
+  return { ok: true, modeDeprecie: true };
 }
 
 // ── Notifications ─────────────────────────────────────────────
@@ -330,26 +391,42 @@ function dataUrlVersBlob(dataUrl: string): { blob: Blob; extension: string } {
 /**
  * Téléverse une photo dans le bucket privé `photos`.
  * Chemin : <agent_id>/<observation_id>.<ext>
- * Retourne le chemin, ou null si le stockage n'est pas disponible.
+ *
+ * Ne lève jamais : en cas d'échec, l'erreur est renvoyée pour être affichée
+ * et journalisée, et l'appelant conserve l'image dans la base (colonne photo)
+ * afin de ne jamais perdre un signalement.
  */
 export async function televerserPhoto(
   agentId: string,
   observationId: string,
   dataUrl: string,
-): Promise<string | null> {
+): Promise<{ chemin: string | null; erreur?: string }> {
   try {
     const client = exigerClient();
     const { blob, extension } = dataUrlVersBlob(dataUrl);
+
+    if (blob.size > TAILLE_MAX_BUCKET) {
+      return {
+        chemin: null,
+        erreur: `Photo trop volumineuse pour le stockage (${Math.round(blob.size / 1024)} Ko)`,
+      };
+    }
+
     const chemin = `${agentId}/${observationId}.${extension}`;
     const { error } = await client.storage.from(BUCKET_PHOTOS).upload(chemin, blob, {
       cacheControl: "31536000",
       upsert: true,
       contentType: blob.type,
     });
-    if (error) return null;
-    return chemin;
-  } catch {
-    return null;
+    if (error) {
+      return { chemin: null, erreur: `Stockage photo indisponible (${error.message})` };
+    }
+    return { chemin };
+  } catch (e) {
+    return {
+      chemin: null,
+      erreur: e instanceof Error ? e.message : "Stockage photo indisponible",
+    };
   }
 }
 

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:rls": "bun run supabase/tests/run-rls-tests.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run src/db/migrate.ts"
+    "db:migrate": "bun run src/db/migrate.ts",
+    "test:unit": "bun test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

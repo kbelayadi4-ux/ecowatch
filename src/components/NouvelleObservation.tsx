@@ -54,7 +54,9 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   const [photo, setPhoto] = useState<string | null>(null);
   const [etat, setEtat] = useState<Etat>("formulaire");
   const [avertissement, setAvertissement] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const envoiRef = useRef(false);
 
   const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][];
   const zones = Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][];
@@ -81,56 +83,84 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
 
   // ── Enregistrement ───────────────────────────────────────────
   const handleEnvoyer = async () => {
-    if (!type || !zone || etat === "envoi") return;
+    if (!type || !zone) return;
+    if (envoiRef.current) return; // anti double soumission
+    envoiRef.current = true;
+
     setEtat("envoi");
     setAvertissement(null);
+    setErreur(null);
 
-    const idObservation = generateId();
+    try {
+      const idObservation = generateId();
 
-    // La photo est deposee dans le bucket prive ; en cas d'echec, on conserve
-    // l'image dans la base (colonne photo) pour ne pas perdre le signalement.
-    let cheminPhoto: string | undefined;
-    if (photo) {
-      const chemin = await televerserPhoto(agent.id, idObservation, photo);
-      if (chemin) cheminPhoto = chemin;
-    }
+      // La photo est déposée dans le bucket privé ; en cas d'échec, on conserve
+      // l'image dans la base (colonne photo) pour ne pas perdre le signalement.
+      let cheminPhoto: string | undefined;
+      let notePhoto: string | null = null;
 
-    const obs: Observation = {
-      id: idObservation,
-      numeroSuivi: "",
-      agentId: agent.id,
-      agentNom: agent.nom,
-      agentTelephone: agent.telephone,
-      typeProbleme: type,
-      commentaire: commentaire.trim(),
-      zone,
-      photo: cheminPhoto ? undefined : photo || undefined,
-      photoPath: cheminPhoto,
-      dateCreation: new Date().toISOString(),
-      partage: false,
-      statut: "nouvelle",
-      priorite: "normale",
-      assigneA: null,
-      echeance: null,
-      dateCloture: null,
-      majLe: new Date().toISOString(),
-    };
+      if (photo) {
+        const televersement = await televerserPhoto(agent.id, idObservation, photo);
+        if (televersement.chemin) {
+          cheminPhoto = televersement.chemin;
+        } else {
+          notePhoto = televersement.erreur ?? "Stockage photo indisponible";
+        }
+      }
 
-    const resultat = await saveObservation(obs);
+      const obs: Observation = {
+        id: idObservation,
+        numeroSuivi: "",
+        agentId: agent.id,
+        agentNom: agent.nom,
+        agentTelephone: agent.telephone,
+        typeProbleme: type,
+        commentaire: commentaire.trim(),
+        zone,
+        photo: cheminPhoto ? undefined : photo || undefined,
+        photoPath: cheminPhoto,
+        dateCreation: new Date().toISOString(),
+        partage: false,
+        statut: "nouvelle",
+        priorite: "normale",
+        assigneA: null,
+        echeance: null,
+        dateCloture: null,
+        majLe: new Date().toISOString(),
+      };
 
-    if (resultat.ok) {
-      if (photo && !cheminPhoto) {
-        setAvertissement("Photo jointe au signalement (stockage d images indisponible).");
+      const resultat = await saveObservation(obs);
+
+      if (!resultat.ok) {
+        // L'erreur technique est journalisée puis affichée : aucune erreur
+        // silencieuse ne doit laisser l'écran « Enregistrement… » figé.
+        console.error("[EcoWatch] échec de l'enregistrement", resultat.erreur);
+        setErreur(resultat.erreur ?? "Erreur inconnue");
+        setEtat("erreur");
+        return;
+      }
+
+      if (notePhoto) {
+        setAvertissement(`${notePhoto} — photo jointe au signalement.`);
+      } else if (resultat.modeDeprecie) {
+        setAvertissement(
+          "Signalement enregistré (base en mode compatibilité, sans suivi détaillé).",
+        );
       }
       setEtat("succes");
-    } else {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("[EcoWatch] exception pendant l'envoi", e);
+      setErreur(message);
       setEtat("erreur");
+    } finally {
+      envoiRef.current = false;
     }
   };
 
   const recommencer = () => {
     setType(null); setCommentaire(""); setZone(null); setPhoto(null);
-    setEtat("formulaire"); setAvertissement(null);
+    setEtat("formulaire"); setAvertissement(null); setErreur(null);
   };
 
   // ── ÉCRAN : Envoi en cours ───────────────────────────────────
@@ -171,17 +201,32 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     );
   }
 
-  // ── ÉCRAN : Erreur ───────────────────────────────────────────
+  // ── Écran : Erreur ───────────────────────────────────────────
   if (etat === "erreur") {
     return (
       <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center px-6">
         <div className="w-full max-w-sm text-center">
           <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-black text-red-700 mb-2">Échec de l'enregistrement</h2>
-          <p className="text-gray-600 text-sm mb-6">Le signalement n'a pas pu être envoyé. Vérifiez votre connexion puis réessayez.</p>
+          <h2 className="text-xl font-black text-red-700 mb-2">Échec de l&apos;enregistrement</h2>
+          <p className="text-gray-600 text-sm mb-3">
+            Le signalement n&apos;a pas été enregistré. Vérifiez votre connexion, puis réessayez.
+            Aucune donnée n&apos;a été perdue : le formulaire est conservé.
+          </p>
+          {erreur && (
+            <details className="text-left bg-white border border-red-100 rounded-xl p-3 mb-5">
+              <summary className="text-xs font-semibold text-red-700 cursor-pointer">
+                Détail technique
+              </summary>
+              <p className="text-[11px] text-gray-600 mt-2 break-words font-mono">{erreur}</p>
+            </details>
+          )}
           <div className="space-y-3">
-            <button className="btn-terrain btn-primary w-full" onClick={recommencer}>Réessayer sans photo</button>
-            <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>Retour</button>
+            <button className="btn-terrain btn-primary w-full" onClick={recommencer}>
+              Réessayer
+            </button>
+            <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>
+              Retour
+            </button>
           </div>
         </div>
       </div>
@@ -198,6 +243,12 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
         <div><p className="font-black text-lg leading-none">Nouvelle Observation</p><p className="text-green-200 text-xs">{agent.nom}</p></div>
       </header>
       <main className="flex-1 px-4 py-5 space-y-5 pb-32">
+        {avertissement && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-700">{avertissement}</p>
+          </div>
+        )}
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">Type de problème <span className="text-red-500">*</span></h3>
           <p className="text-gray-500 text-xs mb-3">Sélectionnez la catégorie</p>
@@ -224,7 +275,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
         </section>
         <section className="bg-white rounded-2xl p-4 shadow-sm">
           <h3 className="font-black text-gray-800 text-base mb-1">Photo</h3>
-          <p className="text-gray-500 text-xs mb-3">Facultatif – compressée automatiquement</p>
+          <p className="text-gray-500 text-xs mb-3">Facultative – compressée automatiquement</p>
           {photo ? (
             <div className="relative rounded-xl overflow-hidden"><img src={photo} alt="Photo" className="w-full object-cover max-h-56 rounded-xl" /><button onClick={() => setPhoto(null)} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 shadow-lg"><X className="w-4 h-4" /></button></div>
           ) : (
@@ -233,12 +284,13 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
               <button className="btn-terrain btn-secondary" onClick={() => { if (fileRef.current) { fileRef.current.removeAttribute("capture"); fileRef.current.click(); } }}><ImageIcon className="w-5 h-5" /> Galerie</button>
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" className="hidden" onChange={handlePhoto} />
         </section>
       </main>
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
         <button className={`btn-terrain w-full text-lg ${peutEnvoyer ? "btn-primary" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`} style={{ minHeight: 68 }} disabled={!peutEnvoyer} onClick={handleEnvoyer}><Send className="w-6 h-6" /> Envoyer le signalement</button>
         {!peutEnvoyer && <p className="text-center text-xs text-gray-400 mt-1.5">Choisissez le type et la zone pour continuer</p>}
+        {peutEnvoyer && <p className="text-center text-xs text-gray-400 mt-1.5">La photo est facultative</p>}
       </div>
     </div>
   );

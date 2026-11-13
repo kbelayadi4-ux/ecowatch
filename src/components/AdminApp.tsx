@@ -308,56 +308,70 @@ export default function AdminApp({ agent, onLogout }: Props) {
     if (!formType || !formZone || !formAgentId) return;
     setEnregistrement(true);
 
-    const id = generateId();
-    let cheminPhoto: string | undefined;
-    if (formPhoto) {
-      const { televerserPhoto } = await import("@/lib/data");
-      const chemin = await televerserPhoto(formAgentId, id, formPhoto);
-      if (chemin) cheminPhoto = chemin;
-    }
+    try {
+      const id = generateId();
+      let cheminPhoto: string | undefined;
+      let notePhoto: string | null = null;
 
-    const agentCible = agents.find((a) => a.id === formAgentId);
-    if (!agentCible) {
+      if (formPhoto) {
+        const { televerserPhoto } = await import("@/lib/data");
+        const televersement = await televerserPhoto(formAgentId, id, formPhoto);
+        if (televersement.chemin) cheminPhoto = televersement.chemin;
+        else notePhoto = televersement.erreur ?? "Stockage photo indisponible";
+      }
+
+      const agentCible = agents.find((a) => a.id === formAgentId);
+      if (!agentCible) {
+        setMessage("Agent introuvable");
+        return;
+      }
+
+      const resultat = await saveObservation({
+        id,
+        numeroSuivi: "",
+        agentId: formAgentId,
+        agentNom: agentCible.nom,
+        agentTelephone: agentCible.telephone,
+        typeProbleme: formType,
+        commentaire: formCommentaire.trim(),
+        zone: formZone,
+        photo: cheminPhoto ? undefined : formPhoto ?? undefined,
+        photoPath: cheminPhoto,
+        dateCreation: new Date().toISOString(),
+        partage: false,
+        statut: "nouvelle",
+        priorite: "normale",
+        assigneA: null,
+        echeance: null,
+        dateCloture: null,
+        majLe: new Date().toISOString(),
+      });
+
+      if (!resultat.ok) {
+        console.error("[EcoWatch] échec ajout manuel", resultat.erreur);
+        setMessage(resultat.erreur ?? "Enregistrement impossible");
+        return;
+      }
+
+      if (notePhoto) {
+        setMessage(`${notePhoto} — photo jointe au signalement.`);
+      } else if (resultat.modeDeprecie) {
+        setMessage("Signalement enregistré (base en mode compatibilité, sans suivi détaillé).");
+      }
+
+      setFormSucces(true);
+      setFormType(null);
+      setFormZone(null);
+      setFormCommentaire("");
+      setFormPhoto(null);
+      setTimeout(() => setFormSucces(false), 2500);
+      await rafraichir();
+    } catch (e) {
+      console.error("[EcoWatch] exception pendant l'ajout manuel", e);
+      setMessage(e instanceof Error ? e.message : "Enregistrement impossible");
+    } finally {
       setEnregistrement(false);
-      setMessage("Agent introuvable");
-      return;
     }
-
-    const resultat = await saveObservation({
-      id,
-      numeroSuivi: "",
-      agentId: formAgentId,
-      agentNom: agentCible.nom,
-      agentTelephone: agentCible.telephone,
-      typeProbleme: formType,
-      commentaire: formCommentaire.trim(),
-      zone: formZone,
-      photo: cheminPhoto ? undefined : formPhoto ?? undefined,
-      photoPath: cheminPhoto,
-      dateCreation: new Date().toISOString(),
-      partage: false,
-      statut: "nouvelle",
-      priorite: "normale",
-      assigneA: null,
-      echeance: null,
-      dateCloture: null,
-      majLe: new Date().toISOString(),
-    });
-
-    setEnregistrement(false);
-
-    if (!resultat.ok) {
-      setMessage(resultat.erreur ?? "Enregistrement impossible");
-      return;
-    }
-
-    setFormSucces(true);
-    setFormType(null);
-    setFormZone(null);
-    setFormCommentaire("");
-    setFormPhoto(null);
-    setTimeout(() => setFormSucces(false), 2500);
-    await rafraichir();
   };
 
   const handlePhotoManuelle = async (fichier: File | undefined) => {
@@ -367,8 +381,12 @@ export default function AdminApp({ agent, onLogout }: Props) {
       setMessage(probleme);
       return;
     }
-    const brut = await fichierVersDataUrl(fichier);
-    setFormPhoto(await compresserPhoto(brut, 1000, 0.72));
+    try {
+      const brut = await fichierVersDataUrl(fichier);
+      setFormPhoto(await compresserPhoto(brut, 1000, 0.72));
+    } catch {
+      setMessage("Lecture de l'image impossible, choisissez une autre photo.");
+    }
   };
 
   const changerRole = async (a: Agent, role: "agent" | "admin") => {
