@@ -31,6 +31,16 @@ existantes sont conservées.
   - Documentation : `docs/README-PROJET.md`, `INSTALLATION-DEPLOIEMENT.md`,
     `SECURITE-SUPABASE.md`, `TESTS-VALIDATION.md`, `RAPPORT-FINAL-DIRECTION.md`.
   - Tests : 72 assertions RLS vertes, typecheck / lint / build OK.
+- [x] **Préparation du pilote (13/11/2026)**
+  - `009` amendée : backfill et unicité des numéros de suivi,
+    `p_effacer_echeance`, désaffectation d'un responsable par chaîne vide.
+  - `supabase/audit/audit-lecture-seule.sql` : audit 100 % SELECT (migrations,
+    RLS, fonctions, triggers, comptes, Auth, Realtime, Storage).
+  - `docs/PROCEDURE-PILOTE-SCG.md`, `docs/CHECKLIST-SUPABASE.md`,
+    `docs/PLAN-TEST-MULTI-TELEPHONES.md`.
+  - Constat Netlify : site HTTP 200 mais build antérieur à 73591f4
+    (icônes `icon-192.png` en 404).
+  - 75 assertions RLS vertes.
 
 - [x] Base Next.js 16 setup with App Router
 - [x] TypeScript + Tailwind CSS 4

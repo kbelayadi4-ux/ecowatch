@@ -176,8 +176,11 @@ export async function getHistorique(observationId: string): Promise<EvenementSui
 export interface MiseAJourSuivi {
   statut?: StatutObservation;
   priorite?: Priorite;
+  /** `""` désaffecte le responsable, `null` ne change rien. */
   assigneA?: string | null;
   echeance?: string | null;
+  /** `true` efface l'échéance ; sinon `null` ne change rien. */
+  effacerEcheance?: boolean;
   commentaire?: string;
 }
 
@@ -193,6 +196,7 @@ export async function updateObservation(
     p_assigne_a: mise.assigneA ?? null,
     p_echeance: mise.echeance ?? null,
     p_commentaire: mise.commentaire ?? null,
+    p_effacer_echeance: mise.effacerEcheance ?? false,
   });
   if (error) return { ok: false, erreur: error.message };
   return { ok: true };

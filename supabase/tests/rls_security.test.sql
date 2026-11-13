@@ -802,6 +802,43 @@ begin
   perform pg_temp.check(v_cloture is null, 'reouverture: date de cloture effacee');
 end $do$;
 
+-- Affectation, desaffectation et échéance.
+do $do$
+declare
+  v_assigne text;
+  v_echeance timestamptz;
+begin
+  perform public.admin_update_observation('suivi-obs-1', null, null, 'test-agent-b', now() + interval '2 days');
+  select assigne_a, echeance into v_assigne, v_echeance
+  from public.observations where id = 'suivi-obs-1';
+  perform pg_temp.check(v_assigne = 'test-agent-b' and v_echeance is not null,
+    'admin: affectation et échéance appliquees');
+
+  perform public.admin_update_observation('suivi-obs-1', null, null, '', null, null, true);
+  select assigne_a, echeance into v_assigne, v_echeance
+  from public.observations where id = 'suivi-obs-1';
+  perform pg_temp.check(v_assigne is null and v_echeance is null,
+    'admin: désaffectation et effacement de l échéance');
+end $do$;
+
+-- Le numéro de suivi est unique.
+do $do$
+declare
+  v_refus boolean := false;
+  v_num text;
+begin
+  select numero_suivi into v_num from public.observations where id = 'suivi-obs-1';
+
+  begin
+    insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone, numero_suivi)
+    values ('suivi-doublon', 'test-agent-a', 'Agent A', '10000001', 'fuite_huile', 'cru', v_num);
+  exception when others then
+    v_refus := true;
+  end;
+
+  perform pg_temp.check(v_refus, 'numero de suivi unique');
+end $do$;
+
 -- L'agent proprietaire voit la notification de statut.
 set local role authenticated;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');

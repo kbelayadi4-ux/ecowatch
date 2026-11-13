@@ -1156,9 +1156,7 @@ function DetailObservation({
                 className="input-terrain mt-1"
                 value={observation.assigneA ?? ""}
                 disabled={enregistrement}
-                onChange={(e) =>
-                  onMaj(observation.id, { assigneA: e.target.value ? e.target.value : null })
-                }
+                onChange={(e) => onMaj(observation.id, { assigneA: e.target.value })}
               >
                 <option value="">Non affecté</option>
                 {agents.map((a) => (
@@ -1177,9 +1175,13 @@ function DetailObservation({
                 disabled={enregistrement}
                 onChange={(e) => {
                   setEcheance(e.target.value);
-                  onMaj(observation.id, {
-                    echeance: e.target.value ? new Date(e.target.value).toISOString() : null,
-                  });
+                  if (e.target.value) {
+                    onMaj(observation.id, {
+                      echeance: new Date(e.target.value).toISOString(),
+                    });
+                  } else {
+                    onMaj(observation.id, { effacerEcheance: true });
+                  }
                 }}
               />
             </label>

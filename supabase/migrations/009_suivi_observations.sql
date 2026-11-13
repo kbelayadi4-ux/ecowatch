@@ -292,7 +292,8 @@ create or replace function public.admin_update_observation(
   p_priorite text default null,
   p_assigne_a text default null,
   p_echeance timestamptz default null,
-  p_commentaire text default null
+  p_commentaire text default null,
+  p_effacer_echeance boolean default false
 )
 returns public.observations
 language plpgsql
@@ -303,7 +304,7 @@ as $$
 declare
   v_obs public.observations;
   v_role text;
-  v_assigne_a text := p_assigne_a;
+  v_desaffecter boolean := p_assigne_a is not null and btrim(p_assigne_a) = '';
 begin
   if auth.uid() is null then
     raise exception 'authentification requise' using errcode = '28000';
@@ -321,7 +322,9 @@ begin
     raise exception 'priorite invalide: %', p_priorite using errcode = '22023';
   end if;
 
-  if p_assigne_a is not null then
+  -- Chaine vide : desaffectation explicite. Toute autre valeur doit
+  -- correspondre a un agent existant.
+  if p_assigne_a is not null and not v_desaffecter then
     select role into v_role from public.agents where id = p_assigne_a;
     if v_role is null then
       raise exception 'responsable % introuvable', p_assigne_a using errcode = 'P0002';
@@ -331,8 +334,15 @@ begin
   update public.observations
      set statut = coalesce(p_statut, statut),
          priorite = coalesce(p_priorite, priorite),
-         assigne_a = case when p_assigne_a is null then assigne_a else v_assigne_a end,
-         echeance = coalesce(p_echeance, echeance),
+         assigne_a = case
+           when v_desaffecter then null
+           when p_assigne_a is null then assigne_a
+           else p_assigne_a
+         end,
+         echeance = case
+           when p_effacer_echeance then null
+           else coalesce(p_echeance, echeance)
+         end,
          commentaire = case
            when p_commentaire is null or btrim(p_commentaire) = '' then commentaire
            when commentaire is null or btrim(commentaire) = '' then btrim(p_commentaire)
@@ -354,9 +364,9 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_update_observation(text, text, text, text, timestamptz, text) from public;
-revoke all on function public.admin_update_observation(text, text, text, text, timestamptz, text) from anon;
-grant execute on function public.admin_update_observation(text, text, text, text, timestamptz, text) to authenticated;
+revoke all on function public.admin_update_observation(text, text, text, text, timestamptz, text, boolean) from public;
+revoke all on function public.admin_update_observation(text, text, text, text, timestamptz, text, boolean) from anon;
+grant execute on function public.admin_update_observation(text, text, text, text, timestamptz, text, boolean) to authenticated;
 
 -- ------------------------------------------------------------
 -- 8. Index de service
@@ -366,6 +376,34 @@ create index if not exists idx_observations_priorite on public.observations (pri
 create index if not exists idx_observations_assigne_a on public.observations (assigne_a);
 create index if not exists idx_observations_echeance on public.observations (echeance);
 create index if not exists idx_observations_numero on public.observations (numero_suivi);
+
+-- ------------------------------------------------------------
+-- 8b. Numeros de suivi : attribution aux observations anterieures
+--     puis unicite garantie.
+--     Les observations deja enregistrees n'avaient pas de numero : on leur
+--     en attribue un, dans l'ordre chronologique, sans toucher au reste.
+-- ------------------------------------------------------------
+do $$
+declare
+  r record;
+begin
+  for r in
+    select id, date_creation
+    from public.observations
+    where numero_suivi is null
+    order by date_creation asc, id asc
+  loop
+    update public.observations
+       set numero_suivi =
+             'SCG-' || to_char(coalesce(r.date_creation, now()) at time zone 'Africa/Tunis', 'YYYYMMDD')
+             || '-' || lpad(nextval('public.observations_numero_seq')::text, 5, '0')
+     where id = r.id;
+  end loop;
+end $$;
+
+-- Unicite : un numero de suivi ne peut pas etre duplique.
+create unique index if not exists idx_observations_numero_uniq
+  on public.observations (numero_suivi);
 
 -- Realtime : les nouvelles colonnes doivent etre diffusees.
 do $$
