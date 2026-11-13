@@ -167,4 +167,5 @@ que `agents.role` : la révocation est donc immédiate, sans attendre l'expirati
 | 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |
 | 2026-11-13 | Finalisation complète : suivi des observations (statut, priorité, affectation, échéance, historique), photos Supabase Storage, interfaces Agent/Admin, PWA, documentation direction ; 72 assertions RLS vertes |
 | 2026-11-13 | Robustesse du formulaire d'envoi (verrou double-clic, erreurs affichées, photo facultative/HEIC), affichage de `notePhoto`, 14 tests unitaires, 75 assertions RLS vertes |
+| 2026-11-13 | Audit base réelle : aucun accès (ni env, ni CLI, ni psql) — livrables `docs/AUDIT-BASE-ECOWATCH.md` + audit SQL étendu (39 SELECT, sections 15/16) |
 | 2026-11-13 | Contrôle final post-`9ff7050` : garde-fou HEIC/HEIF avant dépôt Storage, 18 tests unitaires, 75 assertions RLS vertes |
