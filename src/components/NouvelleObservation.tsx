@@ -1,7 +1,6 @@
 "use client";
-/* eslint-disable react-hooks/set-state-in-effect */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
   ChevronLeft,
   Camera,
@@ -21,9 +20,13 @@ import {
   LIBELLES_PROBLEMES,
   LIBELLES_ZONES,
 } from "@/lib/types";
-import { generateId, compresserPhoto } from "@/lib/store";
-import { saveObservation } from "@/lib/data";
-import { supabase } from "@/lib/supabase";
+import {
+  generateId,
+  compresserPhoto,
+  fichierVersDataUrl,
+  validerFichierImage,
+} from "@/lib/store";
+import { saveObservation, televerserPhoto } from "@/lib/data";
 
 interface Props {
   agent: Agent;
@@ -52,66 +55,72 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
   const [etat, setEtat] = useState<Etat>("formulaire");
   const [avertissement, setAvertissement] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [agentId, setAgentId] = useState<string>(agent.id);
-
-  // Sync agentId with Supabase Auth user
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        // Get agent profile linked to auth user
-        const { data } = await supabase.from("agents").select("id").eq("auth_user_id", session.user.id).maybeSingle();
-        if (data) setAgentId(data.id);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // Initialize agentId from props (fallback for non-migrated accounts)
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => {
-    setAgentId(agent.id);
-  }, [agent.id]);
 
   const typesProblemes = Object.entries(LIBELLES_PROBLEMES) as [TypeProbleme, string][];
   const zones = Object.entries(LIBELLES_ZONES) as [ZoneUsine, string][];
 
   // ── Photo : lecture + compression automatique ────────────────
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
-      const compresse = await compresserPhoto(base64, 800, 0.72);
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fichier = e.target.files?.[0];
+    if (!fichier) return;
+    const probleme = validerFichierImage(fichier);
+    if (probleme) {
+      setAvertissement(probleme);
+      return;
+    }
+    setAvertissement(null);
+    try {
+      const brut = await fichierVersDataUrl(fichier);
+      const compresse = await compresserPhoto(brut, 1000, 0.72);
       setPhoto(compresse);
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setAvertissement("Lecture de l'image impossible, réessayez.");
+    }
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   // ── Enregistrement ───────────────────────────────────────────
   const handleEnvoyer = async () => {
-    if (!type || !zone) return;
+    if (!type || !zone || etat === "envoi") return;
     setEtat("envoi");
     setAvertissement(null);
 
+    const idObservation = generateId();
+
+    // La photo est deposee dans le bucket prive ; en cas d'echec, on conserve
+    // l'image dans la base (colonne photo) pour ne pas perdre le signalement.
+    let cheminPhoto: string | undefined;
+    if (photo) {
+      const chemin = await televerserPhoto(agent.id, idObservation, photo);
+      if (chemin) cheminPhoto = chemin;
+    }
+
     const obs: Observation = {
-      id: generateId(),
-      agentId, // Uses auth-linked agent ID
+      id: idObservation,
+      numeroSuivi: "",
+      agentId: agent.id,
       agentNom: agent.nom,
       agentTelephone: agent.telephone,
       typeProbleme: type,
       commentaire: commentaire.trim(),
       zone,
-      photo: photo || undefined,
+      photo: cheminPhoto ? undefined : photo || undefined,
+      photoPath: cheminPhoto,
       dateCreation: new Date().toISOString(),
       partage: false,
+      statut: "nouvelle",
+      priorite: "normale",
+      assigneA: null,
+      echeance: null,
+      dateCloture: null,
+      majLe: new Date().toISOString(),
     };
 
     const resultat = await saveObservation(obs);
 
     if (resultat.ok) {
-      if (resultat.erreur === "photo_ignoree") {
-        setAvertissement("Photo non sauvegardée (mémoire insuffisante) – observation enregistrée.");
+      if (photo && !cheminPhoto) {
+        setAvertissement("Photo jointe au signalement (stockage d images indisponible).");
       }
       setEtat("succes");
     } else {
@@ -169,7 +178,7 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
         <div className="w-full max-w-sm text-center">
           <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-black text-red-700 mb-2">Échec de l'enregistrement</h2>
-          <p className="text-gray-600 text-sm mb-6">La mémoire de l'application est pleine. Essayez sans photo ou contactez l'administrateur.</p>
+          <p className="text-gray-600 text-sm mb-6">Le signalement n'a pas pu être envoyé. Vérifiez votre connexion puis réessayez.</p>
           <div className="space-y-3">
             <button className="btn-terrain btn-primary w-full" onClick={recommencer}>Réessayer sans photo</button>
             <button className="btn-terrain btn-secondary w-full" onClick={onRetour}>Retour</button>

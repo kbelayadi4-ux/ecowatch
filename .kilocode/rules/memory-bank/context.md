@@ -2,13 +2,35 @@
 
 ## Current State
 
-**App Status**: 🟡 En cours de migration vers Supabase — branche `feat/supabase-auth`
+**App Status**: 🟢 Finalisée (validée localement) — branche `feat/supabase-auth`
 
 La branche `main` reste sur localStorage. La branche `feat/supabase-auth` porte la
 migration vers Supabase Auth / Postgres / Realtime. L'interface et les fonctionnalités
 existantes sont conservées.
 
 ## Recently Completed
+
+- [x] **Finalisation du 13/11/2026 — migrations 009 / 010**
+  - `009_suivi_observations.sql` : colonnes `statut`, `priorite`, `assigne_a`,
+    `echeance`, `date_cloture`, `numero_suivi`, `photo_path`, `maj_le` ; table
+    `observation_history` + trigger de journalisation ; trigger
+    `trg_obs_impose_agent` (identité imposée par la base) ;
+    `admin_update_observation()` ; politique `obs_insert_admin` ; notification
+    automatique de changement de statut.
+  - `010_storage_photos.sql` : bucket privé `photos`, lecture propriétaire/admin,
+    dépôt dans son propre dossier, 5 Mo max.
+  - `src/lib/data.ts` réécrit : pagination, filtres, KPI, historique, RPC
+    d'administration, upload et URL signée des photos.
+  - `src/lib/store.ts` réduit aux utilitaires navigateur : plus aucune donnée
+    métier dans le localStorage (cause racine du défaut multi-téléphones).
+  - `AdminApp` : tableau de bord KPI, filtres, fiche détaillée, changement de
+    statut/priorité/responsable/échéance, historique, gestion des agents et des
+    rôles, export Excel. Polling 3 s supprimé (Realtime uniquement).
+  - `MesSignalements` : statut, priorité, échéance, historique + Realtime.
+  - PWA : icônes 192/512/180, manifeste complété, bandeau hors ligne.
+  - Documentation : `docs/README-PROJET.md`, `INSTALLATION-DEPLOIEMENT.md`,
+    `SECURITE-SUPABASE.md`, `TESTS-VALIDATION.md`, `RAPPORT-FINAL-DIRECTION.md`.
+  - Tests : 72 assertions RLS vertes, typecheck / lint / build OK.
 
 - [x] Base Next.js 16 setup with App Router
 - [x] TypeScript + Tailwind CSS 4
@@ -112,3 +134,4 @@ que `agents.role` : la révocation est donc immédiate, sans attendre l'expirati
 | 2026-11-13 | A1 : migration 007, l'admin peut de nouveau marquer les notifications comme lues |
 | 2026-11-13 | A2 : migration 008, `is_admin()` lit `agents.role`, `admin_set_role()` devient l'unique mécanisme serveur de changement de rôle |
 | 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |
+| 2026-11-13 | Finalisation complète : suivi des observations (statut, priorité, affectation, échéance, historique), photos Supabase Storage, interfaces Agent/Admin, PWA, documentation direction ; 72 assertions RLS vertes |

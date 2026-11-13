@@ -17,17 +17,43 @@ export type ZoneUsine =
   | "expedition"
   | "usine";
 
+export type StatutObservation =
+  | "nouvelle"
+  | "en_analyse"
+  | "action_en_cours"
+  | "attente_verification"
+  | "cloturee";
+
+export type Priorite = "basse" | "normale" | "haute" | "critique";
+
+export interface EvenementSuivi {
+  id: number;
+  action: "creation" | "modification" | "suppression";
+  auteurNom: string | null;
+  auteurRole: string | null;
+  resume: string | null;
+  creeLe: string;
+}
+
 export interface Observation {
   id: string;
+  numeroSuivi: string;
   agentId: string;
   agentNom: string;
   agentTelephone: string;
   typeProbleme: TypeProbleme;
   commentaire: string;
   zone: ZoneUsine;
-  photo?: string; // base64
-  dateCreation: string; // ISO string
+  photo?: string;
+  photoPath?: string;
+  dateCreation: string;
   partage: boolean;
+  statut: StatutObservation;
+  priorite: Priorite;
+  assigneA: string | null;
+  echeance: string | null;
+  dateCloture: string | null;
+  majLe: string;
 }
 
 export interface Agent {
@@ -35,6 +61,29 @@ export interface Agent {
   telephone: string;
   nom: string;
   role: "agent" | "admin";
+}
+
+export interface PageObservations {
+  lignes: Observation[];
+  total: number;
+}
+
+export interface FiltresObservations {
+  statut?: StatutObservation | "";
+  priorite?: Priorite | "";
+  zone?: ZoneUsine | "";
+  type?: TypeProbleme | "";
+  agentId?: string;
+  recherche?: string;
+  enRetardSeulement?: boolean;
+}
+
+export interface Kpis {
+  total: number;
+  nouvelles: number;
+  enCours: number;
+  enRetard: number;
+  cloturees: number;
 }
 
 export const LIBELLES_PROBLEMES: Record<TypeProbleme, string> = {
@@ -58,5 +107,44 @@ export const LIBELLES_ZONES: Record<ZoneUsine, string> = {
   usine: "Usine (général)",
 };
 
-// Numéros admin (sans +216)
-export const ADMIN_PHONES = ["00000000"];
+export const LIBELLES_STATUTS: Record<StatutObservation, string> = {
+  nouvelle: "Nouvelle",
+  en_analyse: "En analyse",
+  action_en_cours: "Action en cours",
+  attente_verification: "En attente de vérification",
+  cloturee: "Clôturée",
+};
+
+export const LIBELLES_PRIORITES: Record<Priorite, string> = {
+  basse: "Basse",
+  normale: "Normale",
+  haute: "Haute",
+  critique: "Critique",
+};
+
+export const STATUTS: StatutObservation[] = [
+  "nouvelle",
+  "en_analyse",
+  "action_en_cours",
+  "attente_verification",
+  "cloturee",
+];
+
+export const PRIORITES: Priorite[] = ["basse", "normale", "haute", "critique"];
+
+/** Statuts considérés comme « en cours » de traitement. */
+export const STATUTS_EN_COURS: StatutObservation[] = [
+  "en_analyse",
+  "action_en_cours",
+  "attente_verification",
+];
+
+export function estEnRetard(obs: Observation): boolean {
+  if (!obs.echeance) return false;
+  if (obs.statut === "cloturee") return false;
+  return new Date(obs.echeance).getTime() < Date.now();
+}
+
+export function estResolue(obs: Observation): boolean {
+  return obs.statut === "cloturee";
+}

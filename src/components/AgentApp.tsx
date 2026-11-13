@@ -8,7 +8,6 @@ import {
   Leaf,
 } from "lucide-react";
 import { Agent } from "@/lib/types";
-import { clearSession } from "@/lib/store";
 import NouvelleObservation from "./NouvelleObservation";
 import MesSignalements from "./MesSignalements";
 
@@ -23,7 +22,6 @@ export default function AgentApp({ agent, onLogout }: Props) {
   const [vue, setVue] = useState<Vue>("accueil");
 
   const handleLogout = () => {
-    clearSession();
     onLogout();
   };
 

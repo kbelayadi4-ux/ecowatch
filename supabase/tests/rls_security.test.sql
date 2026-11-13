@@ -638,4 +638,255 @@ begin
   perform pg_temp.check(v_role = 'agent', 'nouvelle inscription = agent meme si le client envoie admin');
 end $do$;
 
+-- ============================================================
+-- 22. Migration 009 — suivi des observations
+-- ============================================================
+reset role;
+savepoint s_suivi;
+
+-- L'identite de l'agent est imposee par la base, meme si le client ment.
+do $do$
+declare
+  v_nom text;
+  v_tel text;
+  v_num text;
+begin
+  insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+  values ('suivi-obs-1', 'test-agent-a', 'Faux Nom', '99999999', 'fuite_huile', 'cru')
+  on conflict (id) do nothing;
+
+  select agent_nom, agent_telephone, numero_suivi
+    into v_nom, v_tel, v_num
+  from public.observations where id = 'suivi-obs-1';
+
+  perform pg_temp.check(v_nom = 'Agent A' and v_tel = '10000001',
+    'insertion: agent_nom et agent_telephone imposes par la base');
+  perform pg_temp.check(v_num like 'SCG-%',
+    'insertion: numero de suivi genere automatiquement');
+end $do$;
+
+-- Un agent ne peut pas modifier une observation (005 : update admin only).
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');
+
+do $do$
+declare
+  v int;
+begin
+  update public.observations set statut = 'cloturee' where id = 'suivi-obs-1';
+  get diagnostics v = row_count;
+  perform pg_temp.check(v = 0, 'agent ne peut pas changer le statut');
+end $do$;
+
+-- L'agent ne peut pas appeler la fonction d'administration.
+do $do$
+declare
+  v_refus boolean := false;
+begin
+  begin
+    perform public.admin_update_observation('suivi-obs-1', 'en_analyse');
+  exception when others then
+    v_refus := true;
+  end;
+  perform pg_temp.check(v_refus, 'agent ne peut pas appeler admin_update_observation');
+end $do$;
+
+-- L'agent lit l'historique de sa propre observation, pas de celle d'un autre.
+do $do$
+begin
+  perform pg_temp.check(
+    pg_temp.count_rows('select count(*) from public.observation_history where observation_identifiant = ''suivi-obs-1''') = 1,
+    'agent lit l historique de sa propre observation'
+  );
+  perform pg_temp.check(
+    pg_temp.count_rows('select count(*) from public.observation_history where observation_identifiant = ''test-obs-b''') = 0,
+    'agent ne lit pas l historique de l observation d un autre agent'
+  );
+end $do$;
+
+-- L'agent ne peut pas ecrire directement dans l'historique.
+do $do$
+declare
+  v_refus boolean := false;
+begin
+  begin
+    insert into public.observation_history (observation_id, observation_identifiant, action, resume)
+    values ('suivi-obs-1', 'suivi-obs-1', 'modification', 'faux');
+  exception when others then
+    v_refus := true;
+  end;
+  perform pg_temp.check(v_refus, 'agent ne peut pas ecrire dans l historique');
+end $do$;
+
+-- L'agent ne peut pas inserer de notification.
+do $do$
+declare
+  v_refus boolean := false;
+begin
+  begin
+    insert into public.notifs (id, obs_id, agent_nom, type_probleme, zone)
+    values ('faux-notif', 'suivi-obs-1', 'Agent A', 'fuite_huile', 'cru');
+  exception when others then
+    v_refus := true;
+  end;
+  perform pg_temp.check(v_refus, 'agent ne peut pas fabriquer de notification');
+end $do$;
+
+reset role;
+
+-- L'administrateur pilote le cycle de traitement.
+-- On simule l'appel RPC tel que Supabase l'expose : JWT admin + role authenticated.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+set local role authenticated;
+
+do $do$
+declare
+  v_statut text;
+  v_cloture timestamptz;
+  v_historique text;
+  v_notif int;
+begin
+  perform public.admin_update_observation('suivi-obs-1', 'en_analyse', 'haute', 'test-agent-b', now() + interval '3 days');
+
+  select statut into v_statut from public.observations where id = 'suivi-obs-1';
+  perform pg_temp.check(v_statut = 'en_analyse', 'admin: changement de statut applique');
+
+  perform public.admin_update_observation('suivi-obs-1', 'cloturee');
+
+  select statut, date_cloture into v_statut, v_cloture
+  from public.observations where id = 'suivi-obs-1';
+  perform pg_temp.check(v_statut = 'cloturee' and v_cloture is not null,
+    'admin: cloture horodatee');
+
+  select resume into v_historique
+  from public.observation_history
+  where observation_identifiant = 'suivi-obs-1' and action = 'modification'
+  order by cree_le desc limit 1;
+  perform pg_temp.check(v_historique like '%statut%', 'historique: changement de statut trace');
+
+  -- La notification de changement de statut est destinee a l'agent proprietaire.
+  select count(*) into v_notif
+  from public.notifs where obs_id = 'suivi-obs-1' and id like 'ns-%';
+  perform pg_temp.check(v_notif >= 1, 'notification de changement de statut creee');
+end $do$;
+
+-- Statut et responsable invalides refuses.
+do $do$
+declare
+  v_statut_refuse boolean := false;
+  v_agent_refuse boolean := false;
+begin
+  begin
+    perform public.admin_update_observation('suivi-obs-1', 'statut_inexistant');
+  exception when others then
+    v_statut_refuse := true;
+  end;
+
+  begin
+    perform public.admin_update_observation('suivi-obs-1', 'en_analyse', null, 'agent-inexistant');
+  exception when others then
+    v_agent_refuse := true;
+  end;
+
+  perform pg_temp.check(v_statut_refuse, 'statut invalide refuse');
+  perform pg_temp.check(v_agent_refuse, 'responsable inexistant refuse');
+end $do$;
+
+-- La reouverture efface la date de cloture.
+do $do$
+declare
+  v_cloture timestamptz;
+begin
+  perform public.admin_update_observation('suivi-obs-1', 'action_en_cours');
+  select date_cloture into v_cloture from public.observations where id = 'suivi-obs-1';
+  perform pg_temp.check(v_cloture is null, 'reouverture: date de cloture effacee');
+end $do$;
+
+-- L'agent proprietaire voit la notification de statut.
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');
+do $do$
+begin
+  perform pg_temp.check(
+    pg_temp.count_rows('select count(*) from public.notifs where obs_id = ''suivi-obs-1''') >= 1,
+    'agent proprietaire voit la notification de changement de statut'
+  );
+end $do$;
+
+-- Un autre agent ne la voit pas.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a2', 'agent');
+do $do$
+begin
+  perform pg_temp.check(
+    pg_temp.count_rows('select count(*) from public.notifs where obs_id = ''suivi-obs-1''') = 0,
+    'agent B ne voit pas la notification de agent A'
+  );
+end $do$;
+
+-- La suppression par l'administrateur conserve la trace historique.
+reset role;
+do $do$
+declare
+  v_trace text;
+begin
+  delete from public.observations where id = 'suivi-obs-1';
+  select observation_identifiant into v_trace
+  from public.observation_history
+  where observation_identifiant = 'suivi-obs-1' and action = 'suppression';
+  perform pg_temp.check(v_trace = 'suivi-obs-1', 'suppression: trace historique conservee');
+end $do$;
+
+-- L'agent ne peut pas insérer une observation pour un autre agent.
+set local role authenticated;
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1', 'agent');
+do $do$
+declare
+  v_refus boolean := false;
+begin
+  begin
+    insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+    values ('suivi-usurpation', 'test-agent-b', 'Agent A', '10000001', 'fuite_huile', 'cru');
+  exception when others then
+    v_refus := true;
+  end;
+  perform pg_temp.check(v_refus, 'agent ne peut pas insérer pour un autre agent');
+end $do$;
+
+-- L'administrateur peut créer une observation pour un agent donné.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a9', 'admin');
+do $do$
+declare
+  v_ok boolean := false;
+begin
+  begin
+    insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+    values ('suivi-admin', 'test-agent-b', 'Agent B', '10000002', 'fuite_eau', 'ciment');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  perform pg_temp.check(v_ok, 'admin peut créer une observation pour un agent');
+end $do$;
+
+reset role;
+
+rollback to savepoint s_suivi;
+release savepoint s_suivi;
+
+-- ============================================================
+-- 23. Migration 010 — bucket photos
+-- ============================================================
+do $do$
+begin
+  if to_regclass('storage.buckets') is null then
+    raise notice 'OK: bucket photos non testable (schema storage absent en local)';
+    return;
+  end if;
+
+  perform pg_temp.check(
+    (select public from storage.buckets where id = 'photos') = false,
+    'bucket photos prive'
+  );
+end $do$;
+
 rollback;

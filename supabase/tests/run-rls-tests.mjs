@@ -62,6 +62,8 @@ const POST_FILES = [
   "supabase/migrations/006_agent_signup_trigger.sql",
   "supabase/migrations/007_fix_admin_notifications.sql",
   "supabase/migrations/008_unify_admin_roles.sql",
+  "supabase/migrations/009_suivi_observations.sql",
+  "supabase/migrations/010_storage_photos.sql",
 ];
 
 const notices = [];
