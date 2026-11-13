@@ -25,6 +25,7 @@ import {
   compresserPhoto,
   fichierVersDataUrl,
   validerFichierImage,
+  estTypeStockable,
 } from "@/lib/store";
 import { saveObservation, televerserPhoto } from "@/lib/data";
 
@@ -74,6 +75,13 @@ export default function NouvelleObservation({ agent, onRetour, onSaved }: Props)
     try {
       const brut = await fichierVersDataUrl(fichier);
       const compresse = await compresserPhoto(brut, 1000, 0.72);
+      if (!estTypeStockable(compresse)) {
+        setPhoto(null);
+        setAvertissement(
+          "Ce navigateur ne sait pas convertir ce format (HEIC/HEIF). Choisissez une photo JPEG, PNG ou WebP.",
+        );
+        return;
+      }
       setPhoto(compresse);
     } catch {
       setAvertissement("Lecture de l'image impossible, réessayez.");

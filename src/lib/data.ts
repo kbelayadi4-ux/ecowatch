@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { TAILLE_MAX_BUCKET } from "./store";
+import { TAILLE_MAX_BUCKET, TYPES_STOCKAGE_AUTORISES } from "./store";
 import {
   Agent,
   EvenementSuivi,
@@ -404,6 +404,13 @@ export async function televerserPhoto(
   try {
     const client = exigerClient();
     const { blob, extension } = dataUrlVersBlob(dataUrl);
+
+    if (!TYPES_STOCKAGE_AUTORISES.includes(blob.type)) {
+      return {
+        chemin: null,
+        erreur: `Format non convertible par ce navigateur (${blob.type}) : choisissez JPEG, PNG ou WebP.`,
+      };
+    }
 
     if (blob.size > TAILLE_MAX_BUCKET) {
       return {

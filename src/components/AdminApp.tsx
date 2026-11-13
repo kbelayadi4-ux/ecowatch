@@ -75,7 +75,13 @@ import {
   updateObservation,
   urlPhoto,
 } from "@/lib/data";
-import { generateId, compresserPhoto, fichierVersDataUrl, validerFichierImage } from "@/lib/store";
+import {
+  generateId,
+  compresserPhoto,
+  fichierVersDataUrl,
+  validerFichierImage,
+  estTypeStockable,
+} from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import QRCodeCanvas from "./QRCodeCanvas";
 import * as XLSX from "xlsx";
@@ -383,8 +389,17 @@ export default function AdminApp({ agent, onLogout }: Props) {
     }
     try {
       const brut = await fichierVersDataUrl(fichier);
-      setFormPhoto(await compresserPhoto(brut, 1000, 0.72));
+      const compresse = await compresserPhoto(brut, 1000, 0.72);
+      if (!estTypeStockable(compresse)) {
+        setFormPhoto(null);
+        setMessage(
+          "Ce navigateur ne sait pas convertir ce format (HEIC/HEIF). Choisissez une photo JPEG, PNG ou WebP.",
+        );
+        return;
+      }
+      setFormPhoto(compresse);
     } catch {
+      setFormPhoto(null);
       setMessage("Lecture de l'image impossible, choisissez une autre photo.");
     }
   };

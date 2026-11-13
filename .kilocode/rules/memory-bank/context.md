@@ -22,7 +22,11 @@ existantes sont conservées.
     signalement) est maintenant affiché au lieu d'être ignoré.
   - `handleAjoutManuel` / `handlePhotoManuelle` : `try/catch/finally` (plus de
     chargement figé) et message en cas d'échec d'enregistrement.
-- [x] **Tests unitaires `bun test` (14 tests)** : payload d'insertion avec et sans
+- [x] **Conversion photo HEIC/HEIF contrôlée (13/11/2026)** : `TYPES_STOCKAGE_AUTORISES` /
+  `typeDeDataUrl` / `estTypeStockable` dans `store.ts` ; `televerserPhoto` refuse un type
+  non déposable ; le formulaire agent et l'admin préviennent avant envoi si le navigateur
+  ne sait pas convertir (iOS Safari convertit en JPEG automatiquement).
+- [x] **Tests unitaires `bun test` (18 tests)** : payload d'insertion avec et sans
   photo, payload historique, détection d'une base sans migration 009, validation
   du fichier photo (HEIC, vide, 25 Mo refusé, 8 Mo accepté). Commande :
   `bun run test:unit`.
@@ -163,3 +167,4 @@ que `agents.role` : la révocation est donc immédiate, sans attendre l'expirati
 | 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |
 | 2026-11-13 | Finalisation complète : suivi des observations (statut, priorité, affectation, échéance, historique), photos Supabase Storage, interfaces Agent/Admin, PWA, documentation direction ; 72 assertions RLS vertes |
 | 2026-11-13 | Robustesse du formulaire d'envoi (verrou double-clic, erreurs affichées, photo facultative/HEIC), affichage de `notePhoto`, 14 tests unitaires, 75 assertions RLS vertes |
+| 2026-11-13 | Contrôle final post-`9ff7050` : garde-fou HEIC/HEIF avant dépôt Storage, 18 tests unitaires, 75 assertions RLS vertes |

@@ -4,7 +4,11 @@ import {
   payloadObservation,
   payloadObservationLegacy,
 } from "../src/lib/data";
-import { validerFichierImage } from "../src/lib/store";
+import {
+  validerFichierImage,
+  typeDeDataUrl,
+  estTypeStockable,
+} from "../src/lib/store";
 import type { Observation } from "../src/lib/types";
 
 function observation(photo?: string): Observation {
@@ -131,5 +135,27 @@ describe("validation du fichier photo", () => {
 
   test("photo de 8 Mo acceptée (compressée ensuite)", () => {
     expect(validerFichierImage(fichier("moyenne.jpg", "image/jpeg", 8 * 1024 * 1024))).toBeNull();
+  });
+});
+describe("type MIME d'une photo compressée", () => {
+  test("JPEG reconnu et déposable", () => {
+    const url = "data:image/jpeg;base64,AAAA";
+    expect(typeDeDataUrl(url)).toBe("image/jpeg");
+    expect(estTypeStockable(url)).toBe(true);
+  });
+
+  test("PNG et WebP déposables", () => {
+    expect(estTypeStockable("data:image/png;base64,AAAA")).toBe(true);
+    expect(estTypeStockable("data:image/webp;base64,AAAA")).toBe(true);
+  });
+
+  test("HEIC non décodable : non déposable en l'état", () => {
+    const url = "data:image/heic;base64,AAAA";
+    expect(typeDeDataUrl(url)).toBe("image/heic");
+    expect(estTypeStockable(url)).toBe(false);
+  });
+
+  test("data URL sans type déclare du JPEG (défaut)", () => {
+    expect(typeDeDataUrl("data:;base64,AAAA")).toBe("image/jpeg");
   });
 });

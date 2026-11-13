@@ -63,6 +63,24 @@ export const TYPES_IMAGE_AUTORISES = [
 /** Taille maximale avant compression (le bucket est configuré à 5 Mo). */
 export const TAILLE_MAX_OCTETS = 20 * 1024 * 1024;
 
+/** Types réellement acceptés par le bucket privé `photos`. */
+export const TYPES_STOCKAGE_AUTORISES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Type MIME déclaré dans une data URL (`image/jpeg` par défaut). */
+export function typeDeDataUrl(dataUrl: string): string {
+  return /^data:([^;,]+)/.exec(dataUrl)?.[1] ?? "image/jpeg";
+}
+
+/**
+ * Vrai si l'image peut être déposée dans le bucket telle quelle.
+ * Une photo HEIC/HEIF que le navigateur ne sait pas décoder (donc pas
+ * convertir en JPEG par `compresserPhoto`) ressort avec son type d'origine :
+ * le dépôt serait refusé, il est donc signalé avant l'envoi.
+ */
+export function estTypeStockable(dataUrl: string): boolean {
+  return TYPES_STOCKAGE_AUTORISES.includes(typeDeDataUrl(dataUrl));
+}
+
 /** Taille maximale réellement déposée dans le bucket. */
 export const TAILLE_MAX_BUCKET = 5 * 1024 * 1024;
 
