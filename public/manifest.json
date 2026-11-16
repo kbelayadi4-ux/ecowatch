@@ -1,8 +1,8 @@
 {
-  "name": "EcoWatch – Observations Terrain",
+  "name": "EcoWatch SCG – Signalement",
   "short_name": "EcoWatch",
-  "description": "Application de signalement environnemental pour agents d'usine",
-  "start_url": "/",
+  "description": "Signalement environnemental sur le site SCG, sans compte, par QR Code",
+  "start_url": "/signaler",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f0fdf4",

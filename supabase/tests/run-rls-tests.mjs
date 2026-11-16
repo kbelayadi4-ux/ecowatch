@@ -1,6 +1,6 @@
 // Harnais de test local des migrations EcoWatch.
 // Utilise PGlite (PostgreSQL 17 compile en WASM) pour executer reellement
-// schema.sql + migrations 001..006 + les tests RLS, sans base distante.
+// schema.sql + migrations 001..011 + les tests RLS, sans base distante.
 //
 // Usage : bun run supabase/tests/run-rls-tests.mjs
 import { PGlite } from "@electric-sql/pglite";
@@ -64,6 +64,7 @@ const POST_FILES = [
   "supabase/migrations/008_unify_admin_roles.sql",
   "supabase/migrations/009_suivi_observations.sql",
   "supabase/migrations/010_storage_photos.sql",
+  "supabase/migrations/011_signalement_public.sql",
 ];
 
 const notices = [];

@@ -926,4 +926,199 @@ begin
   );
 end $do$;
 
+-- ============================================================
+-- 24. Migration 011 — signalement public par QR Code
+--     Un visiteur anonyme peut créer une observation via la fonction
+--     RPC, et rien d'autre : aucune lecture, aucune écriture directe.
+-- ============================================================
+
+-- 24a. La fonction existe et anon peut l'executer
+do $do$
+begin
+  perform pg_temp.check(
+    has_function_privilege(
+      'anon',
+      'public.creer_signalement_public(text,text,text,text,text,text)',
+      'execute'
+    ),
+    'anon peut executer creer_signalement_public'
+  );
+end $do$;
+
+-- 24b. Aucun privilege de lecture pour anon sur les tables sensibles
+do $do$
+begin
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.observations', 'select'),
+    'anon ne peut pas lire observations'
+  );
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.notifs', 'select'),
+    'anon ne peut pas lire notifs'
+  );
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.agents', 'select'),
+    'anon ne peut pas lire agents'
+  );
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.signalement_public_abus', 'select'),
+    'anon ne peut pas lire le registre anti-abus'
+  );
+end $do$;
+
+-- 24c. Aucune lecture effective sous le role anon
+do $do$
+declare
+  v_ok boolean := false;
+begin
+  set role anon;
+  begin
+    perform count(*) from public.observations;
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  reset role;
+
+  perform pg_temp.check(v_ok = false, 'anon ne peut pas lire les observations');
+end $do$;
+
+-- 24d. Aucune insertion directe sous le role anon
+do $do$
+declare
+  v_ok boolean := false;
+begin
+  set role anon;
+  begin
+    insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+    values ('qr-interdit', 'public', 'X', 'X', 'fuite_eau', 'cru');
+    v_ok := true;
+  exception when others then
+    v_ok := false;
+  end;
+  reset role;
+
+  perform pg_temp.check(v_ok = false, 'anon ne peut pas inserer directement dans observations');
+end $do$;
+
+-- 24e. Creation reussie via la fonction, avec numero de suivi
+do $do$
+declare
+  v_result jsonb;
+  v_numero text;
+  v_ligne public.observations;
+begin
+  set role anon;
+  begin
+    v_result := public.creer_signalement_public(
+      'fuite_eau', 'cru', 'Opérateur Test', 'MAT-1', 'Fuite visible', null
+    );
+  exception when others then
+    reset role;
+    raise exception 'ECHEC: signalement public refuse: %', sqlerrm;
+  end;
+  reset role;
+
+  v_numero := v_result ->> 'numero_suivi';
+
+  perform pg_temp.check(
+    (v_result ->> 'ok')::boolean is true,
+    'signalement public accepte'
+  );
+  perform pg_temp.check(
+    v_numero is not null and v_numero like 'SCG-%',
+    format('numero de suivi genere (%s)', coalesce(v_numero, 'null'))
+  );
+
+  select * into v_ligne from public.observations where id = v_result ->> 'id';
+
+  perform pg_temp.check(v_ligne.agent_id = 'public', 'signalement rattache a l agent technique public');
+  perform pg_temp.check(v_ligne.operateur_nom = 'Opérateur Test', 'nom de l operateur enregistre');
+  perform pg_temp.check(v_ligne.operateur_matricule = 'MAT-1', 'matricule de l operateur enregistre');
+  perform pg_temp.check(v_ligne.statut = 'nouvelle', 'statut impose par la base (nouvelle)');
+  perform pg_temp.check(v_ligne.priorite = 'normale', 'priorite imposee par la base (normale)');
+end $do$;
+
+-- 24f. Validation serveur : type et zone inconnus refuses
+do $do$
+declare
+  v_ok boolean := true;
+begin
+  set role anon;
+  begin
+    perform public.creer_signalement_public('type_inconnu', 'cru', null, null, null, null);
+  exception when others then
+    v_ok := false;
+  end;
+  begin
+    perform public.creer_signalement_public('fuite_eau', 'zone_inconnue', null, null, null, null);
+  exception when others then
+    v_ok := false;
+  end;
+  reset role;
+
+  perform pg_temp.check(v_ok = false, 'type et zone invalides refuses');
+end $do$;
+
+-- 24g. Format de photo refuse
+do $do$
+declare
+  v_ok boolean := true;
+begin
+  set role anon;
+  begin
+    perform public.creer_signalement_public(
+      'fuite_eau', 'cru', null, null, null, 'data:text/html;base64,AAAA'
+    );
+  exception when others then
+    v_ok := false;
+  end;
+  reset role;
+
+  perform pg_temp.check(v_ok = false, 'photo non image refusee');
+end $do$;
+
+-- 24h. Limitation de debit : 5 envois, le 6e refuse
+do $do$
+declare
+  i int;
+  v_ok boolean := true;
+begin
+  set role anon;
+  for i in 1..5 loop
+    begin
+      perform public.creer_signalement_public(
+        'fuite_huile', 'ciment', 'Opérateur Limite', 'LIM-1', null, null
+      );
+    exception when others then
+      v_ok := false;
+    end;
+  end loop;
+
+  begin
+    perform public.creer_signalement_public(
+      'fuite_huile', 'ciment', 'Opérateur Limite', 'LIM-1', null, null
+    );
+    v_ok := false;
+  exception when others then
+    v_ok := v_ok and true;
+  end;
+  reset role;
+
+  perform pg_temp.check(v_ok = true, '6e signalement en 10 minutes refuse (limitation de debit)');
+end $do$;
+
+-- 24i. Aucune modification ni suppression possible pour anon
+do $do$
+begin
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.observations', 'update'),
+    'anon ne peut pas modifier observations'
+  );
+  perform pg_temp.check(
+    not has_table_privilege('anon', 'public.observations', 'delete'),
+    'anon ne peut pas supprimer observations'
+  );
+end $do$;
+
 rollback;

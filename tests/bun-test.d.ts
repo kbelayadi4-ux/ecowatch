@@ -13,7 +13,13 @@ declare module "bun:test" {
     toBeNull(): void;
     toBeUndefined(): void;
     toEqual(valeur: unknown): void;
-    not: Pick<Attendu, "toBe" | "toBeNull" | "toBeUndefined" | "toEqual">;
+    toBeLessThanOrEqual(valeur: number): void;
+    toContain(valeur: string): void;
+    not: Pick<
+      Attendu,
+      "toBe" | "toBeNull" | "toBeUndefined" | "toEqual" | "toBeLessThanOrEqual"
+      | "toContain"
+    >;
   }
 
   export function expect(valeur: unknown): Attendu;

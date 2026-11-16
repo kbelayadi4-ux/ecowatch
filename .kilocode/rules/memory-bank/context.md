@@ -10,6 +10,27 @@ existantes sont conservées.
 
 ## Recently Completed
 
+- [x] **Signalement public par QR Code (16/11/2026)**
+  - Nouvelle page publique `src/app/signaler/page.tsx` + composant
+    `SignalementPublic` : formulaire sans compte (nom/matricule facultatifs,
+    type, zone, description, photo), confirmation avec numéro de suivi.
+  - Nouvelle migration `supabase/migrations/011_signalement_public.sql` :
+    colonnes `operateur_nom` / `operateur_matricule`, agent technique
+    `public`, registre anti-abus, RPC `creer_signalement_public()`
+    (SECURITY DEFINER, validation serveur, 5 envois / 10 min),
+    purge des politiques permissives, politiques cibles, privilèges.
+  - Espace administration déplacé sur `/admin` (`AdminLogin`, OTP seul,
+    plus d'inscription) ; `/` redirige vers `/signaler`.
+  - KPI admin : Total, Aujourd'hui, Cette semaine, Avec photo (+ Nouvelles,
+    En cours, En retard, Clôturées), calcul indépendant tolérant aux erreurs.
+  - QR Code : pointe vers `/signaler` de l'origine de production.
+  - Suppression du code opérateur obsolète : `AgentApp`, `AuthPage`,
+    `MesSignalements`, `NouvelleObservation`, `BoutonPartage`,
+    `signUpAgent()`, `getCurrentUserClaims()`.
+  - Tests : 41 tests unitaires (`tests/signalement.test.ts`) et
+    **94 assertions RLS** (section 24 : anon insertion via RPC, aucune lecture
+    directe, validation, limitation de débit).
+
 - [x] **Robustesse du formulaire agent (13/11/2026)**
   - `handleEnvoyer` enveloppé dans `try/catch/finally` avec verrou anti double-clic
     (`envoiRef`) : le bouton n'est plus bloqué après un échec.
@@ -167,5 +188,6 @@ que `agents.role` : la révocation est donc immédiate, sans attendre l'expirati
 | 2026-11-13 | 51 assertions SQL (dont A1/A2), persistance inter-transaction vérifiée, idempotence 007/008 vérifiée sur 3 exécutions |
 | 2026-11-13 | Finalisation complète : suivi des observations (statut, priorité, affectation, échéance, historique), photos Supabase Storage, interfaces Agent/Admin, PWA, documentation direction ; 72 assertions RLS vertes |
 | 2026-11-13 | Robustesse du formulaire d'envoi (verrou double-clic, erreurs affichées, photo facultative/HEIC), affichage de `notePhoto`, 14 tests unitaires, 75 assertions RLS vertes |
+| 2026-11-16 | Signalement public QR Code : page /signaler, RPC sécurisée (migration 011), /admin, 4 KPI, nettoyage auth opérateur, 41 tests unitaires, 94 assertions RLS |
 | 2026-11-13 | Audit base réelle : aucun accès (ni env, ni CLI, ni psql) — livrables `docs/AUDIT-BASE-ECOWATCH.md` + audit SQL étendu (39 SELECT, sections 15/16) |
 | 2026-11-13 | Contrôle final post-`9ff7050` : garde-fou HEIC/HEIF avant dépôt Storage, 18 tests unitaires, 75 assertions RLS vertes |

@@ -3,9 +3,9 @@ import "./globals.css";
 import EtatConnexion from "@/components/EtatConnexion";
 
 export const metadata: Metadata = {
-  title: "EcoWatch – Observations Terrain",
+  title: "EcoWatch SCG – Signalement environnemental",
   description:
-    "Application de signalement environnemental pour les agents d'usine de la SCG",
+    "Signalement environnemental sur le site de la SCG : les opérateurs scannent le QR Code et envoient leur observation sans compte, l'administration la reçoit en temps réel.",
   manifest: "/manifest.json",
   applicationName: "EcoWatch",
   icons: {

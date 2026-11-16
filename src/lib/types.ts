@@ -54,6 +54,8 @@ export interface Observation {
   echeance: string | null;
   dateCloture: string | null;
   majLe: string;
+  operateurNom?: string | null;
+  operateurMatricule?: string | null;
 }
 
 export interface Agent {
@@ -80,6 +82,12 @@ export interface FiltresObservations {
 
 export interface Kpis {
   total: number;
+  /** Observations enregistrées aujourd'hui (heure de Tunis). */
+  aujourdhui: number;
+  /** Observations enregistrées depuis lundi 00:00 (heure de Tunis). */
+  cetteSemaine: number;
+  /** Observations comportant une photo (colonne `photo` ou `photo_path`). */
+  avecPhoto: number;
   nouvelles: number;
   enCours: number;
   enRetard: number;

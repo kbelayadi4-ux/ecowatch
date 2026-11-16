@@ -62,11 +62,31 @@ Dans *SQL Editor*, exécuter les fichiers **dans l'ordre** :
 | `008_unify_admin_roles.sql` | Rôle = `agents.role` (source de vérité) |
 | `009_suivi_observations.sql` | Statut, priorité, affectation, échéance, historique, photos |
 | `010_storage_photos.sql` | Bucket privé `photos` |
+| `011_signalement_public.sql` | Signalement public par QR Code (RPC sécurisée, durcissement RLS) |
 
 Chaque migration est **idempotente** et se termine par des vérifications qui
 lèvent une exception en cas d'anomalie.
 
-### 4.4 Premier administrateur
+### 4.4 Signalement public (QR Code)
+
+Les opérateurs n'ont **plus de compte** : ils scannent le QR Code et remplissent
+le formulaire public.
+
+| Élément | Valeur |
+| --- | --- |
+| URL publique | `https://<domaine-netlify>/signaler` |
+| URL d'administration | `https://<domaine-netlify>/admin` |
+| QR Code | onglet « QR Code » de l'administration |
+
+Sécurité : l'insertion passe exclusivement par la fonction
+`public.creer_signalement_public()` (migration 011). Le rôle `anon` ne peut ni
+lire, ni modifier, ni supprimer une observation ; les photos restent dans la base
+(colonne `photo`), le bucket `photos` n'est jamais ouvert au public.
+
+La migration 011 vérifie ses prérequis et **refuse de s'exécuter** si 001, 002,
+008 ou 009 ne sont pas appliquées.
+
+### 4.5 Premier administrateur
 
 Après avoir créé un compte Auth pour l'administrateur (téléphone + OTP) :
 
@@ -83,7 +103,7 @@ select public.admin_set_role('XXXXXXXX', 'admin');
 `admin_set_role` met à jour `agents.role` et synchronise `app_metadata.role`
 lorsque le rôle exécutant dispose du privilège.
 
-### 4.5 Realtime
+### 4.6 Realtime
 
 *Database → Replication* : vérifier que la publication `supabase_realtime`
 contient `observations`, `notifs` et `observation_history` (ajoutées par les

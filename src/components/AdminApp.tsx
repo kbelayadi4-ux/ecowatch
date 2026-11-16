@@ -40,6 +40,8 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  CalendarDays,
+  CalendarRange,
 } from "lucide-react";
 import {
   Agent,
@@ -156,6 +158,9 @@ export default function AdminApp({ agent, onLogout }: Props) {
 
   const [kpis, setKpis] = useState<Kpis>({
     total: 0,
+    aujourdhui: 0,
+    cetteSemaine: 0,
+    avecPhoto: 0,
     nouvelles: 0,
     enCours: 0,
     enRetard: 0,
@@ -260,6 +265,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
         "N° suivi": o.numeroSuivi,
         Agent: o.agentNom,
         Téléphone: o.agentTelephone,
+        Opérateur: nomOperateur(o) ?? "",
         Type: LIBELLES_PROBLEMES[o.typeProbleme],
         Zone: LIBELLES_ZONES[o.zone],
         Statut: LIBELLES_STATUTS[o.statut],
@@ -268,6 +274,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
         Échéance: o.echeance ? fmtDate(o.echeance) : "",
         Commentaire: o.commentaire,
         Date: fmtDate(o.dateCreation),
+        Photo: o.photo || o.photoPath ? "Oui" : "Non",
       })),
     );
     XLSX.utils.book_append_sheet(wb, ws, "Signalements");
@@ -410,8 +417,21 @@ export default function AdminApp({ agent, onLogout }: Props) {
     if (resultat.ok) await chargerTout();
   };
 
+  /** Nom affichable de l'opérateur (signalements QR). */
+  const nomOperateur = (o: Observation): string | null => {
+    const nom = o.operateurNom?.trim();
+    const matricule = o.operateurMatricule?.trim();
+    if (nom && matricule) return `${nom} (${matricule})`;
+    if (nom) return nom;
+    if (matricule) return matricule;
+    return null;
+  };
+
   const statsCards: { label: string; valeur: number; couleur: string; icone: React.ReactNode }[] = [
     { label: "Total", valeur: kpis.total, couleur: "text-gray-800", icone: <List className="w-5 h-5" /> },
+    { label: "Aujourd'hui", valeur: kpis.aujourdhui, couleur: "text-emerald-700", icone: <CalendarDays className="w-5 h-5" /> },
+    { label: "Cette semaine", valeur: kpis.cetteSemaine, couleur: "text-teal-700", icone: <CalendarRange className="w-5 h-5" /> },
+    { label: "Avec photo", valeur: kpis.avecPhoto, couleur: "text-indigo-700", icone: <Camera className="w-5 h-5" /> },
     { label: "Nouvelles", valeur: kpis.nouvelles, couleur: "text-blue-700", icone: <BellRing className="w-5 h-5" /> },
     { label: "En cours", valeur: kpis.enCours, couleur: "text-amber-700", icone: <RefreshCw className="w-5 h-5" /> },
     { label: "En retard", valeur: kpis.enRetard, couleur: "text-red-700", icone: <AlertTriangle className="w-5 h-5" /> },
@@ -435,6 +455,15 @@ export default function AdminApp({ agent, onLogout }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <a
+            href="/signaler"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 bg-white/20 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/30"
+            title="Ouvrir le formulaire public"
+          >
+            <QrCode className="w-4 h-4" /> <span className="hidden sm:inline">Formulaire</span>
+          </a>
           <button
             onClick={rafraichir}
             className="flex items-center gap-1.5 bg-white/20 rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/30"
@@ -512,7 +541,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
                             {o.numeroSuivi} — {LIBELLES_PROBLEMES[o.typeProbleme]}
                           </span>
                           <span className="block text-xs text-gray-500 truncate">
-                            {o.agentNom} • {LIBELLES_ZONES[o.zone]} • {fmtDate(o.dateCreation)}
+                            {o.agentId === "public" ? "Signalement QR" : o.agentNom} • {LIBELLES_ZONES[o.zone]} • {fmtDate(o.dateCreation)}
                           </span>
                         </span>
                         <span
@@ -685,7 +714,7 @@ export default function AdminApp({ agent, onLogout }: Props) {
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-600">
                           <span className="flex items-center gap-1">
                             <User className="w-3 h-3 text-green-600" />
-                            {o.agentNom}
+                            {o.agentId === "public" ? `Signalement QR${nomOperateur(o) ? ` — ${nomOperateur(o)}` : ""}` : o.agentNom}
                           </span>
                           <span className="flex items-center gap-1">
                             <MapPin className="w-3 h-3 text-green-600" />

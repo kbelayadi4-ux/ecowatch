@@ -9,9 +9,10 @@ export default function QRCodeCanvas() {
   const [copie, setCopie] = useState(false);
 
   useEffect(() => {
-    // Utilise l'URL complète de l'application déployée
+    // Le QR Code pointe vers le formulaire public de production :
+    // aucun compte, aucune session, aucune page d'administration.
     const id = setTimeout(() => {
-      setUrl(window.location.href.split("?")[0].replace(/\/$/, ""));
+      setUrl(new URL("/signaler", window.location.origin).toString());
     }, 0);
     return () => clearTimeout(id);
   }, []);
@@ -46,7 +47,8 @@ export default function QRCodeCanvas() {
           Partager l&apos;application
         </h3>
         <p className="text-gray-500 text-sm mb-5">
-          Scannez ce code ou envoyez le lien aux agents
+          Les opérateurs scannent ce code et envoient leur signalement
+          sans compte ni numéro de téléphone
         </p>
 
         {/* QR Code */}
@@ -101,19 +103,19 @@ export default function QRCodeCanvas() {
         </div>
       </div>
 
-      {/* Instructions agents */}
+      {/* Instructions opérateurs */}
       <div className="bg-green-50 rounded-2xl p-5 border border-green-200">
         <h4 className="font-bold text-green-800 flex items-center gap-2 mb-4">
           <Smartphone className="w-5 h-5" />
-          Comment accéder à l&apos;application
+          Comment les opérateurs signalent
         </h4>
         <div className="space-y-3">
           {[
-            { n: "1", texte: "Scannez le QR code avec la caméra de votre téléphone", detail: "Ou envoyez le lien par WhatsApp / SMS" },
-            { n: "2", texte: "Ouvrez le lien dans votre navigateur", detail: "Chrome, Safari, Firefox…" },
-            { n: "3", texte: "Entrez votre numéro de téléphone (sans +216)", detail: "Ex : 20 123 456" },
-            { n: "4", texte: "Créez votre compte avec votre nom", detail: "Une seule fois, puis connexion automatique" },
-            { n: "5", texte: "Appuyez sur Nouvelle Observation !", detail: "L'administrateur est notifié instantanément" },
+            { n: "1", texte: "Scannez le QR code avec l'appareil photo du téléphone", detail: "Android et iPhone, sans rien installer" },
+            { n: "2", texte: "Le formulaire s'ouvre directement", detail: "Aucun compte, aucun code SMS, aucun mot de passe" },
+            { n: "3", texte: "Choisissez le type de problème et la zone", detail: "Le nom et le matricule restent facultatifs" },
+            { n: "4", texte: "Ajoutez une photo si besoin, puis envoyez", detail: "L'observation part immédiatement" },
+            { n: "5", texte: "L'administration reçoit le signalement", detail: "Affichage en temps réel, avec numéro de suivi" },
           ].map(({ n, texte, detail }) => (
             <div key={n} className="flex gap-3">
               <div className="w-7 h-7 bg-green-600 text-white rounded-full flex items-center justify-center font-black text-sm flex-shrink-0">
@@ -131,12 +133,19 @@ export default function QRCodeCanvas() {
       {/* Info accès admin */}
       <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
         <p className="text-xs font-bold text-blue-700 mb-1 flex items-center gap-1.5">
-          🔐 Connexion Administrateur
+          🔐 Accès administration
         </p>
         <p className="text-xs text-blue-600">
-          Lors de la création de compte, choisissez <strong>Admin</strong> et entrez le code d&apos;accès secret.
-          Le même lien est utilisé pour les agents et les administrateurs.
+          L&apos;administration se connecte séparément, sur <code className="font-mono">/admin</code>,
+          avec son numéro de téléphone et le code SMS. Le QR Code ne donne jamais
+          accès à l&apos;espace d&apos;administration.
         </p>
+        <a
+          href="/signaler"
+          className="inline-block mt-2 text-xs font-semibold text-blue-700 underline"
+        >
+          Ouvrir le formulaire public
+        </a>
       </div>
     </div>
   );

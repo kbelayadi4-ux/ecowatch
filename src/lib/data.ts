@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { TAILLE_MAX_BUCKET, TYPES_STOCKAGE_AUTORISES } from "./store";
+import { SaisieSignalement, debutJournee, debutSemaine } from "./signalement";
 import {
   Agent,
   EvenementSuivi,
@@ -55,6 +56,8 @@ function fromRow(r: Row): Observation {
     echeance: (r.echeance as string) ?? null,
     dateCloture: (r.date_cloture as string) ?? null,
     majLe: String(r.maj_le ?? ""),
+    operateurNom: (r.operateur_nom as string) ?? null,
+    operateurMatricule: (r.operateur_matricule as string) ?? null,
   };
 }
 
@@ -125,15 +128,25 @@ export async function getObservationsByAgent(agentId: string): Promise<Observati
 export async function getKpis(): Promise<Kpis> {
   const client = exigerClient();
 
-  const compte = async (build: (q: any) => any) => {
-    const { count, error } = await build(
-      client.from("observations").select("id", { count: "exact", head: true }),
-    );
-    if (error) throw error;
-    return count ?? 0;
-  };
-
   const maintenant = new Date().toISOString();
+  const aujourdhui = debutJournee().toISOString();
+  const cetteSemaine = debutSemaine().toISOString();
+
+  const compte = async (build: (q: any) => any): Promise<number> => {
+    try {
+      const { count, error } = await build(
+        client.from("observations").select("id", { count: "exact", head: true }),
+      );
+      if (error) {
+        console.error("[EcoWatch] KPI indisponible", error.message);
+        return 0;
+      }
+      return count ?? 0;
+    } catch (e) {
+      console.error("[EcoWatch] KPI en échec", e);
+      return 0;
+    }
+  };
 
   const [total, nouvelles, enAnalyse, actionCours, attente, enRetard, cloturees] =
     await Promise.all([
@@ -146,8 +159,18 @@ export async function getKpis(): Promise<Kpis> {
       compte((q) => q.eq("statut", "cloturee")),
     ]);
 
+  // Les quatre indicateurs demandés par l'administration.
+  const [aujourdhuiNb, semaineNb, avecPhotoNb] = await Promise.all([
+    compte((q) => q.gte("date_creation", aujourdhui)),
+    compte((q) => q.gte("date_creation", cetteSemaine)),
+    compte((q) => q.or("photo.not.is.null,photo_path.not.is.null")),
+  ]);
+
   return {
     total,
+    aujourdhui: aujourdhuiNb,
+    cetteSemaine: semaineNb,
+    avecPhoto: avecPhotoNb,
     nouvelles,
     enCours: enAnalyse + actionCours + attente,
     enRetard,
@@ -308,6 +331,44 @@ function notifFromRow(r: Row): Notif {
   };
 }
 
+export interface ResultatSignalementPublic {
+  ok: boolean;
+  erreur?: string;
+  numeroSuivi?: string;
+}
+
+/**
+ * Enregistre un signalement envoyé depuis le formulaire public (QR Code).
+ *
+ * Le visiteur n'est pas authentifié : l'insertion passe exclusivement par
+ * `public.creer_signalement_public()` (migration 011), qui valide les champs,
+ * impose l'identité technique et limite le débit. Aucune écriture directe
+ * n'est possible pour le rôle `anon`.
+ */
+export async function creerSignalementPublic(
+  saisie: SaisieSignalement,
+): Promise<ResultatSignalementPublic> {
+  const client = exigerClient();
+
+  const { data, error } = await client.rpc("creer_signalement_public", {
+    p_type_probleme: saisie.type,
+    p_zone: saisie.zone,
+    p_nom: saisie.nom.trim() || null,
+    p_matricule: saisie.matricule.trim() || null,
+    p_commentaire: saisie.commentaire.trim() || null,
+    p_photo: saisie.photo ?? null,
+  });
+
+  if (error) {
+    console.error("[EcoWatch] échec signalement public", error.message);
+    return { ok: false, erreur: error.message };
+  }
+
+  const ligne = Array.isArray(data) ? data[0] : data;
+  const numero = (ligne as { numero_suivi?: string } | null)?.numero_suivi;
+  return { ok: true, numeroSuivi: numero ?? undefined };
+}
+
 export async function getNotifs(): Promise<Notif[]> {
   const client = exigerClient();
   const { data, error } = await client
@@ -351,11 +412,26 @@ export async function marquerNotifNonLu(notifId: string): Promise<void> {
 
 export async function getAgentsAdmin(): Promise<Agent[]> {
   const client = exigerClient();
-  const { data, error } = await client
+
+  let { data, error }: { data: Row[] | null; error: { message: string } | null } = await client
     .from("agents")
     .select("id, telephone, nom, role, auth_user_id")
     .order("nom", { ascending: true });
+
+  // Une base où la migration 001 n'est pas encore appliquée n'expose pas
+  // `auth_user_id` : on retombe sur les colonnes historiques plutôt que de
+  // faire échouer tout l'onglet « Gérer les agents ».
+  if (error && /auth_user_id/.test(error.message)) {
+    const secours = await client
+      .from("agents")
+      .select("id, telephone, nom, role")
+      .order("nom", { ascending: true });
+    data = secours.data;
+    error = secours.error;
+  }
+
   if (error) throw error;
+
   return (data ?? []).map((r: Row) => ({
     id: String(r.id),
     telephone: String(r.telephone ?? ""),

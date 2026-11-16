@@ -31,29 +31,6 @@ export async function signInWithPhone(phone: string): Promise<{ error: string | 
 }
 
 /**
- * Sign up new agent (sends OTP to phone)
- *
- * Le role n'est jamais transmis par le client : le trigger `on_auth_user_created`
- * (supabase/migrations/006_agent_signup_trigger.sql) cree la ligne `agents`
- * avec le role 'agent' impose cote serveur. Seul le role 'admin' est
- * attribuable via l'API Admin Supabase (service_role), jamais depuis le navigateur.
- */
-export async function signUpAgent(phone: string, nom: string): Promise<{ error: string | null }> {
-  const normalizedPhone = phone.replace(/\s/g, "").replace(/^216/, "");
-  const { error } = await supabase.auth.signInWithOtp({
-    phone: `+216${normalizedPhone}`,
-    options: {
-      // Seules des donnees non sensibles sont transmises. Le champ `role`
-      // est volontairement absent : il serait de toute facon ignore par la
-      // securite (app_metadata non modifiable par le client) et le role est
-      // fixe par la base.
-      data: { nom: nom.trim().slice(0, 80) },
-    },
-  });
-  return { error: error?.message ?? null };
-}
-
-/**
  * Verify OTP code
  */
 export async function verifyOtp(phone: string, token: string): Promise<{ error: string | null }> {
@@ -98,18 +75,4 @@ export function onAuthChange(callback: (agent: Agent | null) => void) {
 export async function isCurrentUserAdmin(): Promise<boolean> {
   const agent = await getCurrentAgent();
   return agent?.role === "admin";
-}
-
-/**
- * Get current user's JWT claims for debugging
- */
-export async function getCurrentUserClaims(): Promise<Record<string, any> | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  return {
-    id: user.id,
-    phone: user.phone,
-    app_metadata: user.app_metadata,
-    user_metadata: user.user_metadata,
-  };
 }
