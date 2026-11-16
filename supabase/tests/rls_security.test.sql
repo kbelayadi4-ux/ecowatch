@@ -1078,14 +1078,14 @@ begin
   perform pg_temp.check(v_ok = false, 'photo non image refusee');
 end $do$;
 
--- 24h. Limitation de debit : 5 envois, le 6e refuse
+-- 24h. Limitation de debit : 20 envois acceptes, le 21e refuse
 do $do$
 declare
   i int;
   v_ok boolean := true;
 begin
   set role anon;
-  for i in 1..5 loop
+  for i in 1..20 loop
     begin
       perform public.creer_signalement_public(
         'fuite_huile', 'ciment', 'Opérateur Limite', 'LIM-1', null, null
@@ -1105,7 +1105,7 @@ begin
   end;
   reset role;
 
-  perform pg_temp.check(v_ok = true, '6e signalement en 10 minutes refuse (limitation de debit)');
+  perform pg_temp.check(v_ok = true, '21e signalement en 10 minutes refuse (limitation de debit)');
 end $do$;
 
 -- 24i. Aucune modification ni suppression possible pour anon

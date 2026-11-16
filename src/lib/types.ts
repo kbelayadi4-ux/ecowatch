@@ -81,6 +81,8 @@ export interface FiltresObservations {
 }
 
 export interface Kpis {
+  /** `false` si au moins un compteur n'a pas pu être interrogé. */
+  disponible: boolean;
   total: number;
   /** Observations enregistrées aujourd'hui (heure de Tunis). */
   aujourdhui: number;

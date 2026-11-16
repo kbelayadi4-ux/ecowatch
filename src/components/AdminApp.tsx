@@ -157,6 +157,9 @@ export default function AdminApp({ agent, onLogout }: Props) {
   const [erreur, setErreur] = useState<string | null>(null);
 
   const [kpis, setKpis] = useState<Kpis>({
+    // `true` par défaut : l'avertissement ne s'affiche qu'après un échec réel,
+    // pour éviter un flash au premier chargement.
+    disponible: true,
     total: 0,
     aujourdhui: 0,
     cetteSemaine: 0,
@@ -503,6 +506,16 @@ export default function AdminApp({ agent, onLogout }: Props) {
         {/* ══ TABLEAU DE BORD ═══════════════════════════════════ */}
         {onglet === "tableau" && (
           <div className="space-y-4">
+            {!kpis.disponible && (
+              <div className="rounded-2xl bg-amber-50 border border-amber-300 px-4 py-3 text-amber-800">
+                <p className="text-sm font-bold">Compteurs indisponibles</p>
+                <p className="text-xs mt-1">
+                  Les valeurs affichées sont incomplètes. Vérifiez que les migrations de
+                  la base sont appliquées et que le compte de service dispose des droits
+                  de lecture sur les observations.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {statsCards.map((c) => (
                 <div key={c.label} className="bg-white rounded-2xl p-3 shadow-sm">

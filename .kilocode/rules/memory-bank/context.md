@@ -30,6 +30,18 @@ existantes sont conservées.
   - Tests : 41 tests unitaires (`tests/signalement.test.ts`) et
     **94 assertions RLS** (section 24 : anon insertion via RPC, aucune lecture
     directe, validation, limitation de débit).
+- [x] **Durcissement du signalement public (16/11/2026)**
+  - Limitation de débit portée de 5 à **20 envois / 10 min** : sur un site
+    industriel, plusieurs opérateurs partagent la même adresse de sortie (NAT) ;
+    le seuil de 5 bloquait des signalements légitimes.
+  - Empreinte anti-abus fiabilisée : `x-real-ip` en repli de `x-forwarded-for`,
+    et pour `x-forwarded-for` (liste de proxys) seule la **première adresse**
+    est retenue, après `btrim`.
+  - KPI admin : `getKpis()` renvoie désormais `disponible` (`Kpis.disponible`),
+    `false` dès qu'un compteur échoue. Le tableau de bord affiche alors un
+    bandeau « Compteurs indisponibles » au lieu de laisser croire à un
+    « zéro observation » trompeur. État initial `true` pour éviter un flash.
+  - Test RLS 24h ajusté : 20 envois acceptés, le 21ᵉ refusé.
 
 - [x] **Robustesse du formulaire agent (13/11/2026)**
   - `handleEnvoyer` enveloppé dans `try/catch/finally` avec verrou anti double-clic

@@ -185,7 +185,17 @@ begin
   -- Empreinte = adresse IP transmise par PostgREST + identifiant opérateur
   -- éventuel. Aucune donnée personnelle n'est stockée en clair.
   begin
-    v_ip := nullif(current_setting('request.headers', true)::json ->> 'x-forwarded-for', '');
+    -- PostgREST expose les en-têtes de la requête. Selon la passerelle,
+    -- l'adresse du client arrive dans x-forwarded-for ou x-real-ip.
+    -- x-forwarded-for peut contenir une chaîne de proxys : on ne retient que
+    -- la première adresse, celle du client.
+    v_ip := nullif(
+      coalesce(
+        nullif(btrim(split_part(current_setting('request.headers', true)::json ->> 'x-forwarded-for', ',', 1)), ''),
+        current_setting('request.headers', true)::json ->> 'x-real-ip'
+      ),
+      ''
+    );
   exception when others then
     v_ip := null;
   end;
@@ -206,7 +216,10 @@ begin
   where empreinte = v_empreinte
     and cree_le > now() - interval '10 minutes';
 
-  if v_recent >= 5 then
+  -- Seuil large : sur un site industriel, plusieurs opérateurs partagent
+  -- la même adresse de sortie (NAT). 20 envois en 10 minutes laissent une
+  -- marge confortable tout en bloquant une soumission automatique.
+  if v_recent >= 20 then
     raise exception 'Trop de signalements envoyés. Réessayez dans quelques minutes.'
       using errcode = 'P0001';
   end if;

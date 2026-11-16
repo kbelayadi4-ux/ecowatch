@@ -132,17 +132,24 @@ export async function getKpis(): Promise<Kpis> {
   const aujourdhui = debutJournee().toISOString();
   const cetteSemaine = debutSemaine().toISOString();
 
+  // Chaque compteur est indépendant : l'échec de l'un ne doit pas masquer les
+  // autres. Le compteur d'échecs permet de distinguer « zéro observation » de
+  // « compteurs indisponibles » (base non migrée, droits manquants).
+  let echecs = 0;
+
   const compte = async (build: (q: any) => any): Promise<number> => {
     try {
       const { count, error } = await build(
         client.from("observations").select("id", { count: "exact", head: true }),
       );
       if (error) {
+        echecs += 1;
         console.error("[EcoWatch] KPI indisponible", error.message);
         return 0;
       }
       return count ?? 0;
     } catch (e) {
+      echecs += 1;
       console.error("[EcoWatch] KPI en échec", e);
       return 0;
     }
@@ -167,6 +174,7 @@ export async function getKpis(): Promise<Kpis> {
   ]);
 
   return {
+    disponible: echecs === 0,
     total,
     aujourdhui: aujourdhuiNb,
     cetteSemaine: semaineNb,
