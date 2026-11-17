@@ -10,6 +10,26 @@ existantes sont conservées.
 
 ## Recently Completed
 
+- [x] **Audit de synchronisation Supabase (17/11/2026)**
+  - Constat (relevés SQL Editor) : la base réelle est réduite à `schema.sql`.
+    `agents.auth_user_id` absent, aucune colonne de suivi sur `observations`,
+    `creer_signalement_public` inexistante ⇒ **migrations 001 à 011 non
+    appliquées**, RLS active sans aucune politique.
+  - Correctif généré : `supabase/fix/alignement-eco-watch.sql` (2189 lignes),
+    produit par `supabase/fix/build-alignement.mjs` depuis `schema.sql` +
+    `001..011`. Transactionnel (`begin`/`commit`), idempotent, sans suppression
+    ni renommage, avec bloc de vérification final qui annule tout en cas d'écart.
+  - Diagnostics : `supabase/fix/diagnostic-avant.sql` (lecture seule, tolérant
+    aux objets absents) et `supabase/fix/verification-apres.sql` (VERDICT OK/N).
+  - Vérificateur local `supabase/fix/verifier-alignement.mjs` : **41 contrôles
+    verts** (équivalence exacte du schéma cible, idempotence, survie des données,
+    anon sans lecture, RPC publique, KPI, privilèges colonnes).
+  - Rapport : `docs/AUDIT-SYNCHRONISATION-SUPABASE.md` (diagnostic, ordre,
+    SQL, tests, procédure deux téléphones). **Rien n'a été appliqué ni déployé.**
+  - Nouveaux scripts npm : `fix:generer`, `fix:verifier`.
+  - Point bloquant restant : lier le premier administrateur (`agents.role` +
+    `auth_user_id`) avec des données réelles, et activer l'OTP SMS.
+
 - [x] **Signalement public par QR Code (16/11/2026)**
   - Nouvelle page publique `src/app/signaler/page.tsx` + composant
     `SignalementPublic` : formulaire sans compte (nom/matricule facultatifs,

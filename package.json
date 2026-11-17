@@ -11,7 +11,9 @@
     "test:rls": "bun run supabase/tests/run-rls-tests.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/db/migrate.ts",
-    "test:unit": "bun test"
+    "test:unit": "bun test",
+    "fix:generer": "bun run supabase/fix/build-alignement.mjs",
+    "fix:verifier": "bun run supabase/fix/verifier-alignement.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
