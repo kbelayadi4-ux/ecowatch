@@ -97,6 +97,40 @@ async function empreinte(db) {
 async function base(sql) {
   const db = await PGlite.create();
   await db.exec(BOOTSTRAP);
+  // Silhouette minimale du schema `storage` de Supabase : sans elle, la
+  // migration 010 ne cree ni bucket ni politique et les controles sur les
+  // photos ne vaudraient rien.
+  await db.exec(`
+    create schema if not exists storage;
+    create table if not exists storage.buckets (
+      id text primary key,
+      name text,
+      public boolean not null default false,
+      file_size_limit bigint,
+      allowed_mime_types text[]
+    );
+    create table if not exists storage.objects (
+      id uuid primary key default gen_random_uuid(),
+      bucket_id text references storage.buckets(id),
+      name text,
+      owner uuid
+    );
+    create or replace function storage.foldername(text) returns text[]
+    language sql immutable
+    as $fn$
+      select case when position('/' in $1) = 0 then array[]::text[]
+                  else string_to_array(regexp_replace($1, '/[^/]*$', ''), '/')
+             end;
+    $fn$;
+    grant usage on schema storage to anon, authenticated, service_role;
+    grant all on storage.buckets, storage.objects to anon, authenticated, service_role;
+
+    -- Comme dans Supabase : les tables Storage sont sous RLS. Sans cela,
+    -- les politiques creees par la migration 010 ne seraient pas appliquees
+    -- et les controles d'acces aux photos ne vaudraient rien.
+    alter table storage.buckets enable row level security;
+    alter table storage.objects enable row level security;
+  `);
   await db.exec(sql);
   return db;
 }
@@ -128,6 +162,42 @@ async function echoue(db, role, sql, claims) {
 
 const SCHEMA = read("supabase/schema.sql");
 const ALIGNEMENT = read("supabase/fix/alignement-eco-watch.sql");
+const DRY_RUN = read("supabase/fix/alignement-eco-watch-dry-run.sql");
+
+// ------------------------------------------------------------
+// 0. Contrat transactionnel des deux scripts
+//    L'installateur ne doit contenir AUCUN rollback : sinon ce
+//    serait un script de simulation deguise en installation.
+// ------------------------------------------------------------
+console.log("\nContrat transactionnel");
+
+const compte = (texte, motif) => (texte.match(motif) ?? []).length;
+
+const install = {
+  begin: compte(ALIGNEMENT, /^\s*begin\s*;$/gim),
+  commit: compte(ALIGNEMENT, /^\s*commit\s*;$/gim),
+  rollback: compte(ALIGNEMENT, /^\s*rollback\s*;$/gim),
+};
+const simulation = {
+  begin: compte(DRY_RUN, /^\s*begin\s*;$/gim),
+  commit: compte(DRY_RUN, /^\s*commit\s*;$/gim),
+  rollback: compte(DRY_RUN, /^\s*rollback\s*;$/gim),
+};
+
+ok(install.begin === 1, "installation : exactement un BEGIN", `${install.begin}`);
+ok(install.commit === 1, "installation : exactement un COMMIT", `${install.commit}`);
+ok(install.rollback === 0, "installation : aucun ROLLBACK (modifications conservees)", `${install.rollback}`);
+ok(simulation.begin === 1, "dry-run : exactement un BEGIN", `${simulation.begin}`);
+ok(simulation.rollback === 1, "dry-run : exactement un ROLLBACK", `${simulation.rollback}`);
+ok(simulation.commit === 0, "dry-run : aucun COMMIT (aucune modification conservee)", `${simulation.commit}`);
+
+const positionCommit = ALIGNEMENT.lastIndexOf("\ncommit;");
+const positionVerif = ALIGNEMENT.indexOf("VERIFICATION FINALE");
+ok(
+  positionVerif > 0 && positionCommit > positionVerif,
+  "installation : la verification precede le COMMIT",
+  `verif=${positionVerif} commit=${positionCommit}`,
+);
 
 // ------------------------------------------------------------
 // 1. Reference : schema.sql + 001..011
@@ -467,6 +537,253 @@ const rpcAdmin = await reel.query(
   `select has_function_privilege('anon', 'public.admin_update_observation(text,text,text,text,timestamptz,text,boolean)', 'execute') as v`,
 );
 ok(rpcAdmin.rows[0].v === false, "anon : ne peut pas appeler admin_update_observation()");
+
+// ------------------------------------------------------------
+// 11. Escalade de privileges (tentatives reelles, pas seulement
+//     des verifications de droits declares)
+// ------------------------------------------------------------
+console.log("\nEscalade de privileges — role authenticated non-admin");
+
+/** Nombre de lignes reellement modifiees par une instruction DML (-1 si refus). */
+async function modifie(db, role, sql, claims) {
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.exec(`set local role ${role};`);
+      if (claims) {
+        await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify(claims)]);
+        await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [claims.sub]);
+      }
+      const r = await tx.query(sql);
+      return r.affectedRows ?? 0;
+    });
+  } catch {
+    return -1;
+  }
+}
+
+ok(
+  await echoue(
+    reel,
+    "authenticated",
+    `update public.agents set role = 'admin' where id = 'agt1'`,
+    { sub: AGENT_UUID },
+  ),
+  "un agent ne peut pas se promouvoir administrateur (privilege refuse)",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `update public.agents set nom = 'Pirate' where id = 'adm1'`, {
+    sub: AGENT_UUID,
+  })) === 0,
+  "un agent ne peut pas modifier le profil d'un autre",
+);
+
+ok(
+  await echoue(
+    reel,
+    "authenticated",
+    `insert into public.agents (id, telephone, nom, role)
+     values ('intrus', '99999999', 'Intrus', 'admin')`,
+    { sub: AGENT_UUID },
+  ),
+  "un agent ne peut pas creer un profil administrateur",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `update public.observations set statut = 'cloturee'`, {
+    sub: AGENT_UUID,
+  })) === 0,
+  "un agent ne peut pas changer le statut d'une observation",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `delete from public.observations`, {
+    sub: AGENT_UUID,
+  })) === 0,
+  "un agent ne peut pas supprimer une observation",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `update public.notifs set lu = true`, {
+    sub: AGENT_UUID,
+  })) === 0,
+  "un agent ne peut pas marquer comme lues les notifications d'un autre",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `update public.observations set statut = 'cloturee'`, {
+    sub: ADMIN_UUID,
+  })) === 2,
+  "l'administrateur peut modifier les observations",
+);
+
+ok(
+  (await modifie(reel, "authenticated", `update public.agents set nom = 'Admin Test' where id = 'adm1'`, {
+    sub: ADMIN_UUID,
+  })) === 1,
+  "l'administrateur peut modifier un profil",
+);
+
+// ------------------------------------------------------------
+// 11b. Photographies (Storage) et registre anti-abus
+// ------------------------------------------------------------
+console.log("\nPhotographies et registre anti-abus");
+
+const bucket = (await reel.query(
+  `select public, file_size_limit, allowed_mime_types from storage.buckets where id='photos'`,
+)).rows[0];
+
+ok(!!bucket, "bucket photos cree");
+ok(bucket?.public === false, "bucket photos prive (public = false)");
+ok(
+  bucket?.file_size_limit === 5 * 1024 * 1024,
+  "bucket photos limite a 5 Mo",
+  `${bucket?.file_size_limit}`,
+);
+ok(
+  JSON.stringify(bucket?.allowed_mime_types) ===
+    JSON.stringify(["image/jpeg", "image/png", "image/webp"]),
+  "bucket photos limite aux formats JPEG, PNG, WebP",
+  JSON.stringify(bucket?.allowed_mime_types),
+);
+
+await reel.exec(`
+  insert into storage.objects (bucket_id, name) values ('photos', 'agt1/obs1.jpg');
+  insert into storage.objects (bucket_id, name) values ('photos', 'adm1/obs2.jpg');
+`);
+
+const photosAgent = (await sousRole(reel, "authenticated", `select count(*)::int n from storage.objects`, {
+  sub: AGENT_UUID,
+})).rows[0].n;
+
+ok(photosAgent === 1, "un agent ne lit que les photos de son dossier", `${photosAgent}`);
+
+const photosAdmin = (await sousRole(reel, "authenticated", `select count(*)::int n from storage.objects`, {
+  sub: ADMIN_UUID,
+})).rows[0].n;
+
+ok(photosAdmin === 2, "l'administrateur lit toutes les photos", `${photosAdmin}`);
+
+let photosAnon = -1;
+try {
+  photosAnon = (await sousRole(reel, "anon", `select count(*)::int n from storage.objects`)).rows[0].n;
+} catch {
+  photosAnon = -1;
+}
+ok(photosAnon === 0, "le public ne lit aucune photo", `${photosAnon}`);
+
+ok(
+  await echoue(
+    reel,
+    "anon",
+    `insert into storage.objects (bucket_id, name) values ('photos', 'intrus.jpg')`,
+  ),
+  "le public ne peut pas deposer de photo",
+);
+
+ok(
+  !(await privilege("authenticated", "signalement_public_abus", "select")),
+  "authenticated : aucun SELECT sur le registre anti-abus",
+);
+
+// ------------------------------------------------------------
+// 12. Persistance apres COMMIT
+//     Nouvelle transaction : les objets crees par le script doivent
+//     subsister (une annulation posterieure prouverait l'inverse).
+// ------------------------------------------------------------
+console.log("\nPersistance apres COMMIT");
+
+const apresCommit = (await reel.query(`
+  select
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='observations'
+        and column_name in ('statut','priorite','numero_suivi','operateur_nom','photo_path')) as colonnes_suivi,
+    (select count(*)::int from information_schema.tables
+      where table_schema='public' and table_name in ('observation_history','signalement_public_abus')) as tables_service,
+    (select count(*)::int from public.observations) as observations
+`)).rows[0];
+
+ok(apresCommit.colonnes_suivi === 5, "colonnes de suivi toujours presentes apres COMMIT", `${apresCommit.colonnes_suivi}/5`);
+ok(apresCommit.tables_service === 2, "tables de service toujours presentes apres COMMIT", `${apresCommit.tables_service}/2`);
+ok(apresCommit.observations === 2, "signalements toujours presents apres COMMIT", `${apresCommit.observations}`);
+
+// ------------------------------------------------------------
+// 13. Variante dry-run : ROLLBACK, aucune modification conservee
+// ------------------------------------------------------------
+console.log("\nVariante dry-run (simulation annulee)");
+
+const dry = await base(SCHEMA);
+try {
+  await dry.exec(DRY_RUN);
+  ok(true, "alignement-eco-watch-dry-run.sql s'applique sans erreur");
+} catch (e) {
+  ok(false, "alignement-eco-watch-dry-run.sql s'applique sans erreur", e.message);
+}
+
+const apresDry = (await dry.query(`
+  select
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='agents' and column_name='auth_user_id') as auth_user_id,
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='observations' and column_name='statut') as statut,
+    (select count(*)::int from information_schema.tables
+      where table_schema='public' and table_name='signalement_public_abus') as abus
+`)).rows[0];
+
+ok(apresDry.auth_user_id === 0, "dry-run : agents.auth_user_id non conserve (ROLLBACK)", `${apresDry.auth_user_id}`);
+ok(apresDry.statut === 0, "dry-run : observations.statut non conserve (ROLLBACK)", `${apresDry.statut}`);
+ok(apresDry.abus === 0, "dry-run : signalement_public_abus non conserve (ROLLBACK)", `${apresDry.abus}`);
+await dry.close();
+
+// ------------------------------------------------------------
+// 14. Rollback effectif en cas d'anomalie
+//     Une table de service preexistante mais de forme incorrecte
+//     doit faire echouer la verification et TOUT annuler.
+// ------------------------------------------------------------
+console.log("\nRollback en cas d'anomalie");
+
+const cas = await base(`
+  ${SCHEMA}
+  create table public.observation_history (id bigint primary key);
+`);
+
+let interruption = false;
+try {
+  await cas.exec(ALIGNEMENT);
+} catch {
+  interruption = true;
+}
+ok(interruption, "une verification en echec interrompt bien l'installation");
+
+// PGlite n'annule pas automatiquement une transaction echouee : on la
+// ferme explicitement avant de lire l'etat de la base.
+try {
+  await cas.exec("rollback;");
+} catch {
+  /* transaction deja fermee */
+}
+
+const apresEchec = (await cas.query(`
+  select
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='agents' and column_name='auth_user_id') as auth_user_id,
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='observations' and column_name='statut') as statut,
+    (select count(*)::int from information_schema.tables
+      where table_schema='public' and table_name='signalement_public_abus') as abus,
+    (select count(*)::int from information_schema.columns
+      where table_schema='public' and table_name='observation_history') as colonnes_historique
+`)).rows[0];
+
+ok(apresEchec.auth_user_id === 0, "echec : agents.auth_user_id non applique (rollback)", `${apresEchec.auth_user_id}`);
+ok(apresEchec.statut === 0, "echec : observations.statut non applique (rollback)", `${apresEchec.statut}`);
+ok(apresEchec.abus === 0, "echec : signalement_public_abus non cree (rollback)", `${apresEchec.abus}`);
+ok(
+  apresEchec.colonnes_historique === 1,
+  "echec : table preexistante laissee intacte (aucune destruction)",
+  `${apresEchec.colonnes_historique}`,
+);
+await cas.close();
 
 await ref.close();
 await reel.close();

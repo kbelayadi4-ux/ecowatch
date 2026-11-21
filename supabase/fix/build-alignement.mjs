@@ -34,15 +34,18 @@ const ETAPES = [
   ["011", "supabase/migrations/011_signalement_public.sql", "RPC de signalement public + champs operateur"],
 ];
 
+const DRY_RUN = process.argv.includes("--dry-run");
+
 const EN_TETE = `-- ============================================================
 -- EcoWatch SCG — ALIGNEMENT DE LA BASE SUPABASE
+-- Mode : ${DRY_RUN ? "SIMULATION (ROLLBACK, aucune modification conservee)" : "INSTALLATION (COMMIT, modifications conservees)"}
 --
 -- Genere automatiquement par supabase/fix/build-alignement.mjs
 -- depuis schema.sql + migrations 001..011. NE PAS MODIFIER A LA MAIN.
 --
 -- Ce script :
 --   * est IDEMPOTENT  : rejouable sans effet de bord ;
---   * est TRANSACTIONNEL : BEGIN ... COMMIT, avec verification finale ;
+--   * est TRANSACTIONNEL : BEGIN ... ${DRY_RUN ? "ROLLBACK" : "COMMIT"}, avec verification finale ;
 --   * ne supprime AUCUNE donnee : aucune ligne existante n'est
 --     supprimee, aucune colonne n'est renommee, aucune table
 --     n'est supprimee ;
@@ -221,8 +224,14 @@ begin
   raise notice 'Alignement verifie : schema complet, RLS active, aucune lecture publique.';
 end $verif$;
 
-commit;
+${DRY_RUN ? "rollback;" : "commit;"}
 
+${DRY_RUN ? `-- ============================================================
+-- FIN DE SIMULATION
+-- Toutes les modifications ci-dessus ont ete ANNULEES.
+-- La base est revenue a son etat anterieur.
+-- Pour appliquer reellement : supabase/fix/alignement-eco-watch.sql
+-- ============================================================` : ""}
 `;
 
 const morceaux = [EN_TETE];
@@ -240,7 +249,11 @@ morceaux.push(VERIFICATION);
 
 const sortie = morceaux.join("\n");
 
-writeFileSync(join(root, "supabase/fix/alignement-eco-watch.sql"), sortie, "utf8");
+const cheminSortie = DRY_RUN
+  ? "supabase/fix/alignement-eco-watch-dry-run.sql"
+  : "supabase/fix/alignement-eco-watch.sql";
+
+writeFileSync(join(root, cheminSortie), sortie, "utf8");
 
 const lignes = sortie.split("\n").length;
-console.log(`Genere : supabase/fix/alignement-eco-watch.sql (${lignes} lignes)`);
+console.log(`Genere : ${cheminSortie} (${lignes} lignes, ${DRY_RUN ? "dry-run" : "installation"})`);

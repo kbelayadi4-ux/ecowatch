@@ -1,5 +1,6 @@
 -- ============================================================
 -- EcoWatch SCG — ALIGNEMENT DE LA BASE SUPABASE
+-- Mode : INSTALLATION (COMMIT, modifications conservees)
 --
 -- Genere automatiquement par supabase/fix/build-alignement.mjs
 -- depuis schema.sql + migrations 001..011. NE PAS MODIFIER A LA MAIN.
@@ -2186,4 +2187,5 @@ begin
 end $verif$;
 
 commit;
+
 

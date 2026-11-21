@@ -10,6 +10,26 @@ existantes sont conservées.
 
 ## Recently Completed
 
+- [x] **Contre-audit des livrables Supabase (21/11/2026)**
+  - 7 insuffisances identifiées et corrigées : pas de variante de simulation,
+    persistance après `COMMIT` non prouvée, chemin d'échec non testé, escalade
+    de privilèges vérifiée par les droits déclarés seulement, **accès aux
+    photos jamais exercé** (le harnais tournait sans schéma `storage`),
+    contrat transactionnel non asserté, empreinte du rapport initiale périmée.
+  - Nouveaux fichiers : `supabase/fix/alignement-eco-watch-dry-run.sql`
+    (2196 lignes, `rollback;`) et `docs/CONTRE-AUDIT-SUPABASE.md`.
+  - `verifier-alignement.mjs` étendu à **77 contrôles** : contrat
+    transactionnel, persistance, dry-run, rollback sur anomalie, 8 tentatives
+    d'escalade de privilèges, 9 contrôles Storage (silhouette `storage` avec
+    RLS), registre anti-abus.
+  - Vérificateurs confirmés : `typecheck`, `lint`, `build`, `test` (41),
+    `test:rls` (94), `fix:verifier` (77).
+  - Script d'installation : 2191 lignes,
+    sha256 `c3671a79…`. Simulation : 2196 lignes, sha256 `6bc34b1f…`.
+  - Verdict : **VALIDÉ POUR EXÉCUTION SUPABASE** (sauvegarde, dry-run,
+    installation, `verification-apres.sql`, liaison admin, OTP SMS), **pas**
+    prêt pour la production : rien n'a été exécuté sur l'instance réelle.
+
 - [x] **Audit de synchronisation Supabase (17/11/2026)**
   - Constat (relevés SQL Editor) : la base réelle est réduite à `schema.sql`.
     `agents.auth_user_id` absent, aucune colonne de suivi sur `observations`,

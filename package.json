@@ -13,7 +13,8 @@
     "db:migrate": "bun run src/db/migrate.ts",
     "test:unit": "bun test",
     "fix:generer": "bun run supabase/fix/build-alignement.mjs",
-    "fix:verifier": "bun run supabase/fix/verifier-alignement.mjs"
+    "fix:verifier": "bun run supabase/fix/verifier-alignement.mjs",
+    "fix:dry-run": "bun run supabase/fix/build-alignement.mjs --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

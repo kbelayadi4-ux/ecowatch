@@ -201,9 +201,14 @@ Le script correctif exécute cet ordre dans une **seule transaction** : si une
 ### 4.1 Fichier
 
 ```
-supabase/fix/alignement-eco-watch.sql     2189 lignes
-sha256  03db7ef8be93b96eeff0817c41dba1922a9c7f9b482f3789cbb4f94fb85aee2f
+supabase/fix/alignement-eco-watch.sql     2191 lignes
+sha256  c3671a79395d61e5eb90bbb64c925124f1e10500d2d12a7a2613c69bdbc40b6c
 ```
+
+> **Mise à jour du 21/11/2026** — contre-audit : ajout de la variante de
+> simulation `supabase/fix/alignement-eco-watch-dry-run.sql` (2196 lignes,
+> sha256 `6bc34b1f…`, fin `rollback;`) et de 36 contrôles supplémentaires
+> (77 au total). Voir `docs/CONTRE-AUDIT-SUPABASE.md`.
 
 Il est **généré** depuis `schema.sql` + `001`→`011` par
 `supabase/fix/build-alignement.mjs` : aucune dérive possible avec les
@@ -298,7 +303,13 @@ l'agent technique `public` (C2).
 
 ### 5.1 Vérificateur du script correctif
 
-`bun run fix:verifier` — **41 contrôles, tous verts**.
+`bun run fix:verifier` — **41 contrôles, tous verts** (au 17/11/2026).
+
+> **Mise à jour du 21/11/2026** — le vérificateur a été étendu à **77
+> contrôles** (contrat transactionnel, persistance après `COMMIT`, variante
+> dry-run, rollback en cas d'anomalie, escalade de privilèges, accès
+> Storage). Le tableau ci-dessous est conservé pour l'historique ; le détail
+> à jour figure dans `docs/CONTRE-AUDIT-SUPABASE.md` §7.1.
 
 | Bloc | Contrôle | Résultat |
 |---|---|---|
@@ -432,11 +443,13 @@ forcément l'une de ces trois-là, à vérifier dans l'ordre :
 |---|---|
 | `supabase/fix/diagnostic-avant.sql` | nouveau — diagnostic lecture seule, tolérant aux objets absents |
 | `supabase/fix/build-alignement.mjs` | nouveau — générateur du script correctif |
-| `supabase/fix/alignement-eco-watch.sql` | nouveau — **généré**, 2189 lignes, transactionnel |
+| `supabase/fix/alignement-eco-watch.sql` | nouveau — **généré**, 2191 lignes, transactionnel |
+| `supabase/fix/alignement-eco-watch-dry-run.sql` | nouveau — **généré**, 2196 lignes, simulation `ROLLBACK` |
 | `supabase/fix/verification-apres.sql` | nouveau — contrôle lecture seule après application |
-| `supabase/fix/verifier-alignement.mjs` | nouveau — vérificateur local (47 contrôles) |
-| `package.json` | `fix:generer`, `fix:verifier` |
+| `supabase/fix/verifier-alignement.mjs` | nouveau — vérificateur local (77 contrôles) |
+| `package.json` | `fix:generer`, `fix:dry-run`, `fix:verifier` |
 | `docs/AUDIT-SYNCHRONISATION-SUPABASE.md` | ce rapport |
+| `docs/CONTRE-AUDIT-SUPABASE.md` | contre-audit du 21/11/2026 (indépendant) |
 
 **Aucune donnée, aucune migration du dépôt, aucune politique existante n'a été
 modifiée.** Les fichiers de `supabase/migrations/` sont intacts : le script
