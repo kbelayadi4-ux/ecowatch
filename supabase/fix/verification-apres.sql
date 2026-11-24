@@ -141,6 +141,56 @@ where schemaname in ('public','storage')
 
 
 -- ------------------------------------------------------------
+-- 5b. Les 8 politiques permissives de production
+--     Relevées dans le SQL Editor le 24/11/2026.
+--     Attendu : ABSENTE pour les 8.
+--     Cas particulier : `agents_update_own` est le seul nom réutilisé
+--     par 005, avec une définition restrictive. Il doit donc exister
+--     MAIS ne plus être permissif (voir 5c).
+-- ------------------------------------------------------------
+select p.nom as ancienne_politique,
+       case
+         when p.nom = 'agents_update_own' and exists (
+           select 1 from pg_policies
+           where schemaname='public' and tablename='agents' and policyname='agents_update_own'
+             and coalesce(qual,'-') <> 'true' and coalesce(with_check,'-') <> 'true'
+             and roles::text = '{authenticated}'
+         ) then 'OK (remplacee par une politique restrictive)'
+         when exists (
+           select 1 from pg_policies
+           where schemaname='public' and policyname = p.nom
+         ) then 'ECHEC (politique permissive toujours presente)'
+         else 'OK (absente)'
+       end as etat
+from (values
+  ('agents_insert'),
+  ('agents_read_all'),
+  ('agents_update_own'),
+  ('notifs_insert'),
+  ('notifs_read_all'),
+  ('notifs_update'),
+  ('obs_insert'),
+  ('obs_read_all')
+) as p(nom)
+order by p.nom;
+
+
+-- ------------------------------------------------------------
+-- 5c. Inventaire complet des politiques par table
+--     Toute ligne supplementaire signale une politique non revue.
+-- ------------------------------------------------------------
+select tablename as table,
+       policyname as politique,
+       cmd        as commande,
+       coalesce(roles::text, '-') as roles,
+       coalesce(qual, '-')        as using,
+       coalesce(with_check, '-')  as check
+from pg_policies
+where schemaname = 'public'
+order by tablename, cmd, policyname;
+
+
+-- ------------------------------------------------------------
 -- 6. Accès du role anonyme
 --    attendu : SELECT/INSERT faux sur observations, EXECUTE sur la RPC
 -- ------------------------------------------------------------
@@ -205,6 +255,32 @@ union all
 select 'authenticated UPDATE agents.auth_user_id',
        case when has_column_privilege('authenticated','public.agents','auth_user_id','update')
             then 'ECHEC (usurpation possible)' else 'OK' end;
+
+
+-- ------------------------------------------------------------
+-- 7b. TRUNCATE et sequences (privilèges indépendants de la RLS)
+--     TRUNCATE n'est pas soumis à la RLS : une politique ne peut
+--     pas l'empêcher. Aucun rôle applicatif ne doit l'avoir.
+-- ------------------------------------------------------------
+select 'authenticated TRUNCATE ' || t as libelle,
+       case when has_table_privilege('authenticated', 'public.' || t, 'truncate')
+            then 'ECHEC (purge possible malgre la RLS)' else 'OK' end as etat
+from (values ('agents'), ('observations'), ('notifs'), ('observation_history'), ('signalement_public_abus')) as s(t)
+union all
+select 'anon TRUNCATE ' || t,
+       case when has_table_privilege('anon', 'public.' || t, 'truncate')
+            then 'ECHEC (purge publique)' else 'OK' end
+from (values ('agents'), ('observations'), ('notifs'), ('observation_history'), ('signalement_public_abus')) as s(t)
+union all
+select 'authenticated USAGE ' || s,
+       case when has_sequence_privilege('authenticated', 'public.' || s, 'usage')
+            then 'ECHEC (nextval direct possible)' else 'OK' end
+from (values ('observations_numero_seq'), ('notifs_statut_seq'), ('observation_history_id_seq'), ('signalement_public_abus_id_seq')) as s(s)
+union all
+select 'anon USAGE ' || s,
+       case when has_sequence_privilege('anon', 'public.' || s, 'usage')
+            then 'ECHEC (nextval public)' else 'OK' end
+from (values ('observations_numero_seq'), ('notifs_statut_seq'), ('observation_history_id_seq'), ('signalement_public_abus_id_seq')) as s(s);
 
 
 -- ------------------------------------------------------------
@@ -324,6 +400,16 @@ begin
     union all
     select 1 where not has_function_privilege('anon',
       'public.creer_signalement_public(text,text,text,text,text,text)','execute')
+
+    union all
+    select 1 where has_table_privilege('authenticated','public.observations','truncate')
+      or has_table_privilege('authenticated','public.notifs','truncate')
+      or has_table_privilege('authenticated','public.agents','truncate')
+      or has_table_privilege('authenticated','public.observation_history','truncate')
+
+    union all
+    select 1 where has_sequence_privilege('authenticated','public.observations_numero_seq','usage')
+      or has_sequence_privilege('anon','public.observations_numero_seq','usage')
   ) e;
 
   if v_echecs = 0 then

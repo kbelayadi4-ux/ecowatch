@@ -1,7 +1,7 @@
 // ============================================================
 // Generateur du script correctif transactionnel EcoWatch.
 //
-// Concatene schema.sql + migrations 001..011 dans un unique
+// Concatene schema.sql + migrations 001..012 dans un unique
 // script SQL, encadre par BEGIN/COMMIT, et termine par un bloc
 // de verification qui annule tout en cas d'ecart.
 //
@@ -32,6 +32,7 @@ const ETAPES = [
   ["009", "supabase/migrations/009_suivi_observations.sql", "Statut, priorite, affectation, echeance, historique"],
   ["010", "supabase/migrations/010_storage_photos.sql", "Bucket prive photos"],
   ["011", "supabase/migrations/011_signalement_public.sql", "RPC de signalement public + champs operateur"],
+  ["012", "supabase/migrations/012_durcissement_privileges.sql", "Retrait de TRUNCATE et des acces directs aux sequences"],
 ];
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -41,7 +42,7 @@ const EN_TETE = `-- ============================================================
 -- Mode : ${DRY_RUN ? "SIMULATION (ROLLBACK, aucune modification conservee)" : "INSTALLATION (COMMIT, modifications conservees)"}
 --
 -- Genere automatiquement par supabase/fix/build-alignement.mjs
--- depuis schema.sql + migrations 001..011. NE PAS MODIFIER A LA MAIN.
+-- depuis schema.sql + migrations 001..012. NE PAS MODIFIER A LA MAIN.
 --
 -- Ce script :
 --   * est IDEMPOTENT  : rejouable sans effet de bord ;

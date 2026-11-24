@@ -448,6 +448,42 @@ begin
     v_select, v_insert, v_execute;
 end $do$;
 
+-- ------------------------------------------------------------
+-- 18. Privilèges indépendants de la RLS
+--     TRUNCATE n'est pas soumis à la RLS : il doit être absent pour
+--     les rôles applicatifs. `nextval()` sur une séquence publique
+--     permet de consommer les numéros de suivi.
+-- ------------------------------------------------------------
+-- `materialized` est indispensable : sans lui, PostgreSQL peut évaluer
+-- has_table_privilege() avant le filtre et échouer sur une table absente.
+with tables_presentes as materialized (
+  select t as nom, 'table' as nature
+  from (values ('agents'), ('observations'), ('notifs'), ('observation_history')) as s(t)
+  where to_regclass('public.' || t) is not null
+),
+sequences_presentes as materialized (
+  select s as nom, 'sequence' as nature
+  from (values ('observations_numero_seq'), ('notifs_statut_seq')) as s(s)
+  where to_regclass('public.' || s) is not null
+)
+select nom as objet, nature,
+       case when nature = 'table' then
+         (has_table_privilege('authenticated', 'public.' || nom, 'truncate'))::text
+       else
+         (has_sequence_privilege('authenticated', 'public.' || nom, 'usage'))::text
+       end as authenticated_acces_direct,
+       case when nature = 'table' then
+         (has_table_privilege('anon', 'public.' || nom, 'truncate'))::text
+       else
+         (has_sequence_privilege('anon', 'public.' || nom, 'usage'))::text
+       end as anon_acces_direct
+from (
+  select nom, nature from tables_presentes
+  union all
+  select nom, nature from sequences_presentes
+) e
+order by nature, nom;
+
 -- ============================================================
 -- FIN DU DIAGNOSTIC — aucune donnee modifiee.
 -- ============================================================

@@ -37,7 +37,56 @@ const MIGRATIONS = [
   "supabase/migrations/009_suivi_observations.sql",
   "supabase/migrations/010_storage_photos.sql",
   "supabase/migrations/011_signalement_public.sql",
+  "supabase/migrations/012_durcissement_privileges.sql",
 ];
+
+// Les 8 politiques permissives relevees dans le SQL Editor le 24/11/2026.
+// Elles reproduisent l'etat de la base de production : aucune clause TO
+// (donc `TO public`) et une expression constante `true`.
+const LEGACY = [
+  `create policy "agents_insert" on public.agents for insert with check (true);`,
+  `create policy "agents_read_all" on public.agents for select using (true);`,
+  `create policy "agents_update_own" on public.agents for update using (true);`,
+  `create policy "notifs_insert" on public.notifs for insert with check (true);`,
+  `create policy "notifs_read_all" on public.notifs for select using (true);`,
+  `create policy "notifs_update" on public.notifs for update using (true);`,
+  `create policy "obs_insert" on public.observations for insert with check (true);`,
+  `create policy "obs_read_all" on public.observations for select using (true);`,
+].join("\n");
+
+const LEGACY_NOMS = [
+  "agents_insert",
+  "agents_read_all",
+  "agents_update_own",
+  "notifs_insert",
+  "notifs_read_all",
+  "notifs_update",
+  "obs_insert",
+  "obs_read_all",
+];
+
+// Politiques attendues apres alignement, par table.
+const POLITIQUES_ATTENDUES = {
+  agents: ["agents_read_own_or_admin", "agents_update_own"],
+  observations: [
+    "obs_delete_admin",
+    "obs_insert_admin",
+    "obs_insert_own",
+    "obs_read_own_or_admin",
+    "obs_update_admin",
+  ],
+  notifs: [
+    "notifs_delete_admin",
+    "notifs_read_own_or_admin",
+    "notifs_update_admin",
+    "notifs_update_own",
+  ],
+  observation_history: [
+    "obs_history_read_own_or_admin",
+    "obs_history_system_insert",
+  ],
+  signalement_public_abus: [],
+};
 
 const ADMIN_UUID = "00000000-0000-0000-0000-0000000000aa";
 const AGENT_UUID = "00000000-0000-0000-0000-0000000000bb";
@@ -241,6 +290,122 @@ if (empreinteReel !== empreinteRef) {
   const b = empreinteReel.split("\n");
   for (const l of a.filter((x) => !b.includes(x)).slice(0, 15)) console.log(`       manquant : ${l}`);
   for (const l of b.filter((x) => !a.includes(x)).slice(0, 15)) console.log(`       en trop  : ${l}`);
+}
+
+// ------------------------------------------------------------
+// 2b. Etat reel complet : les 8 politiques permissives
+//     On recree les 8 politiques relevees dans le SQL Editor, on
+//     mesure la fuite, puis on applique l'alignement.
+// ------------------------------------------------------------
+console.log("\nEtat reel complet (schema.sql + 8 politiques permissives)");
+
+const legacy = await base(`
+  ${SCHEMA}
+  insert into public.agents (id, telephone, nom, role)
+  values ('a1', '22000001', 'Agent Historique', 'agent');
+  insert into public.observations (id, agent_id, agent_nom, agent_telephone, type_probleme, zone)
+  values ('o1', 'a1', 'Agent Historique', '22000001', 'fuite_huile', 'cru');
+  ${LEGACY}
+`);
+
+const avantPolicies = await legacy.query(`
+  select tablename, policyname, cmd, coalesce(qual,'-') as qual, coalesce(with_check,'-') as check, roles::text
+  from pg_policies where schemaname='public' order by tablename, policyname
+`);
+ok(avantPolicies.rows.length === 8, "8 politiques permissives recreees (etat de production)", `${avantPolicies.rows.length}`);
+
+let avantFuite = -1;
+try {
+  const r = await sousRole(legacy, "anon", `select count(*)::int n from public.observations`);
+  avantFuite = r.rows[0].n;
+} catch {
+  avantFuite = -1;
+}
+ok(avantFuite === 1, "AVANT alignement : anon lit observations (fuite confirmee)", `${avantFuite}`);
+
+let avantHSen = null;
+try {
+  const r = await sousRole(
+    legacy,
+    "anon",
+    `update public.agents set role = 'admin' where id = 'a1' returning role`,
+  );
+  avantHSen = r.rows[0]?.role ?? null;
+} catch (e) {
+  avantHSen = `refusé: ${e.message.slice(0, 40)}`;
+}
+ok(avantHSen === "admin", "AVANT alignement : anon promeut un agent administrateur", `${avantHSen}`);
+
+try {
+  await legacy.exec(ALIGNEMENT);
+  ok(true, "alignement applique sur la base avec politiques permissives");
+} catch (e) {
+  ok(false, "alignement applique sur la base avec politiques permissives", e.message);
+}
+
+// `agents_update_own` est le seul nom réutilisé : 005 supprime la version
+// permissive et recrée la même politique avec une définition restrictive.
+// Un contrôle par nom est donc insuffisant : on vérifie la définition.
+const NOMS_LEGACY_UNIQUES = LEGACY_NOMS.filter((n) => n !== "agents_update_own");
+
+const restants = (
+  await legacy.query(
+    `select policyname from pg_policies
+     where schemaname='public'
+       and policyname = any($1::text[])
+     order by policyname`,
+    [NOMS_LEGACY_UNIQUES],
+  )
+).rows.map((r) => r.policyname);
+
+ok(restants.length === 0, "les 7 anciennes politiques orphelines ont disparu", restants.join(", "));
+
+const maj = (
+  await legacy.query(
+    `select cmd, qual, with_check, roles::text as roles
+     from pg_policies
+     where schemaname='public' and tablename='agents' and policyname='agents_update_own'`,
+  )
+).rows[0];
+
+ok(
+  !!maj && maj.qual !== "true" && maj.with_check !== "true" && maj.roles === "{authenticated}",
+  "agents_update_own : definition restrictive, plus la politique permissive d'origine",
+  JSON.stringify(maj),
+);
+
+const permissives = (
+  await legacy.query(
+    `select count(*)::int n from pg_policies
+     where schemaname in ('public','storage') and (qual='true' or with_check='true')`,
+  )
+).rows[0].n;
+ok(permissives === 0, "aucune politique permissive residuelle apres alignement", `${permissives}`);
+
+let apresFuite = -1;
+try {
+  const r = await sousRole(legacy, "anon", `select count(*)::int n from public.observations`);
+  apresFuite = r.rows[0].n;
+} catch {
+  apresFuite = -1;
+}
+ok(apresFuite === -1, "APRES alignement : anon ne lit plus observations", `${apresFuite}`);
+
+for (const [table, attendues] of Object.entries(POLITIQUES_ATTENDUES)) {
+  const reelles = (
+    await legacy.query(`select policyname from pg_policies where schemaname='public' and tablename=$1 order by policyname`, [
+      table,
+    ])
+  ).rows.map((r) => r.policyname);
+
+  const manquantes = attendues.filter((p) => !reelles.includes(p));
+  const extras = reelles.filter((p) => !attendues.includes(p));
+
+  ok(
+    manquantes.length === 0 && extras.length === 0,
+    `politiques de ${table} conformes (${attendues.length} attendues)`,
+    `manquantes=${manquantes.join(",") || "-"} extras=${extras.join(",") || "-"}`,
+  );
 }
 
 // ------------------------------------------------------------
@@ -515,6 +680,55 @@ ok(!(await privilege("anon", "notifs", "select")), "anon : aucun SELECT sur noti
 ok(await privilege("authenticated", "observations", "select"), "authenticated : SELECT sur observations");
 ok(await privilege("authenticated", "notifs", "select"), "authenticated : SELECT sur notifs");
 
+// 10b. TRUNCATE contourne la RLS : il ne doit etre accorde a personne
+//      cote applicatif. C'est la faille trouvee le 24/11/2026.
+for (const table of ["agents", "observations", "notifs", "observation_history", "signalement_public_abus"]) {
+  ok(
+    !(await privilege("authenticated", table, "truncate")),
+    `authenticated : aucun TRUNCATE sur ${table}`,
+  );
+  ok(!(await privilege("anon", table, "truncate")), `anon : aucun TRUNCATE sur ${table}`);
+}
+
+const sequence = async (role, nom, droit) => {
+  const r = await reel.query(`select has_sequence_privilege($1, $2, $3) as v`, [
+    role,
+    `public.${nom}`,
+    droit,
+  ]);
+  return r.rows[0].v === true;
+};
+
+for (const seq of [
+  "observations_numero_seq",
+  "notifs_statut_seq",
+  "observation_history_id_seq",
+  "signalement_public_abus_id_seq",
+]) {
+  ok(!(await sequence("anon", seq, "usage")), `anon : aucun acces direct a ${seq}`);
+  ok(!(await sequence("authenticated", seq, "usage")), `authenticated : aucun acces direct a ${seq}`);
+}
+
+// 10c. Verification comportementale : la purge et nextval sont refuses.
+ok(
+  await echoue(
+    reel,
+    "authenticated",
+    `truncate table public.agents, public.observations, public.notifs, public.observation_history`,
+  ),
+  "authenticated : TRUNCATE des 4 tables refuse",
+);
+
+ok(
+  await echoue(reel, "authenticated", `select nextval('public.observations_numero_seq')`),
+  "authenticated : nextval(observations_numero_seq) refuse",
+);
+
+ok(
+  await echoue(reel, "anon", `select nextval('public.notifs_statut_seq')`),
+  "anon : nextval(notifs_statut_seq) refuse",
+);
+
 const colonne = async (table, col, droit) => {
   const r = await reel.query(`select has_column_privilege('authenticated', $1, $2, $3) as v`, [
     `public.${table}`,
@@ -784,6 +998,26 @@ ok(
   `${apresEchec.colonnes_historique}`,
 );
 await cas.close();
+
+// ------------------------------------------------------------
+// 10d. Fonctions restreintes (suite du controle RPC)
+// ------------------------------------------------------------
+console.log("\nFonctions restreintes");
+const rpcRole = await reel.query(
+  `select has_function_privilege('anon', 'public.admin_set_role(text,text)', 'execute') as v`,
+);
+ok(rpcRole.rows[0].v === false, "anon : ne peut pas appeler admin_set_role()");
+
+const pubExec = await reel.query(
+  `select has_function_privilege('public', 'public.current_agent_id()', 'execute') as v`,
+);
+ok(pubExec.rows[0].v === false, "current_agent_id() n'est plus executable par PUBLIC");
+
+const anonExec = await reel.query(
+  `select has_function_privilege('anon', 'public.current_agent_id()', 'execute') as v`,
+);
+ok(anonExec.rows[0].v === false, "current_agent_id() n'est plus executable par anon");
+
 
 await ref.close();
 await reel.close();

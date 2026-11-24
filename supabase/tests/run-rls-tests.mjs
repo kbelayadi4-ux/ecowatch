@@ -65,6 +65,7 @@ const POST_FILES = [
   "supabase/migrations/009_suivi_observations.sql",
   "supabase/migrations/010_storage_photos.sql",
   "supabase/migrations/011_signalement_public.sql",
+  "supabase/migrations/012_durcissement_privileges.sql",
 ];
 
 const notices = [];

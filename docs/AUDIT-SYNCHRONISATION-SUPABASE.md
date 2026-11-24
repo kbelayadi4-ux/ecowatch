@@ -44,7 +44,7 @@ Les relevés décrivent une base **réduite au schéma initial** :
 ### 1.3 Les trois anomalies bloquantes
 
 **A1 — La base n'est pas la base du dépôt.**
-Le dépôt attend 11 migrations ; la base n'en montre aucune. L'application
+Le dépôt attend 12 migrations ; la base n'en montre aucune. L'application
 « fonctionne » parce que `src/lib/data.ts` a été écrit pour *tolérer* cette
 infériorité :
 `estErreurSchemaAncien()` (data.ts:286) détecte « column … does not exist » et
@@ -162,6 +162,7 @@ destinataire est dérivé de l'observation rattachée.
 | 9 | `009_suivi_observations.sql` | **manquante** | statut, priorité, affectation, échéance, historique, n° de suivi |
 | 10 | `010_storage_photos.sql` | **manquante** | bucket privé `photos` |
 | 11 | `011_signalement_public.sql` | **manquante** | RPC publique, champs opérateur, registre anti-abus |
+| 12 | `012_durcissement_privileges.sql` | **manquante** | retrait de `TRUNCATE`, des accès directs aux séquences et de `current_agent_id` pour `anon` |
 
 ### 3.2 Pourquoi cet ordre n'est pas négociable
 
@@ -175,8 +176,9 @@ destinataire est dérivé de l'observation rattachée.
    (préflight lignes 41‑79 du fichier `011`).
 5. **005 après 003** : 005 purge les politiques permissives puis pose les
    politiques cibles ; l'inverse laisserait une politique `true` résiduelle.
-6. **011 en dernier** : il consolide l'ensemble des politiques et révoque les
-   droits `anon`.
+6. **011** consolide l'ensemble des politiques et révoque les droits `anon`.
+7. **012 en dernier** : elle retire `TRUNCATE` et les accès directs aux
+   séquences, que la RLS ne couvre pas (voir `docs/AUDIT-RLS-ALIGNEMENT.md`).
 
 Le script correctif exécute cet ordre dans une **seule transaction** : si une
 étape échoue, tout est annulé et la base reste dans son état antérieur.
@@ -201,16 +203,17 @@ Le script correctif exécute cet ordre dans une **seule transaction** : si une
 ### 4.1 Fichier
 
 ```
-supabase/fix/alignement-eco-watch.sql     2191 lignes
-sha256  c3671a79395d61e5eb90bbb64c925124f1e10500d2d12a7a2613c69bdbc40b6c
+supabase/fix/alignement-eco-watch.sql     2315 lignes
+sha256  04bc5ba2b86c424e6ac165d1cbe9a016f854d18c6378a98dea7d1a3cdb94b95a
 ```
 
-> **Mise à jour du 21/11/2026** — contre-audit : ajout de la variante de
-> simulation `supabase/fix/alignement-eco-watch-dry-run.sql` (2196 lignes,
-> sha256 `6bc34b1f…`, fin `rollback;`) et de 36 contrôles supplémentaires
-> (77 au total). Voir `docs/CONTRE-AUDIT-SUPABASE.md`.
+> **Mise à jour du 24/11/2026** — la migration 012 (durcissement des
+> privilèges) a été ajoutée à la chaîne. La variante de simulation
+> `supabase/fix/alignement-eco-watch-dry-run.sql` continue d'être générée
+> par `bun run fix:dry-run` (`rollback;` en fin de script). Voir
+> `docs/AUDIT-RLS-ALIGNEMENT.md` et `docs/CONTRE-AUDIT-SUPABASE.md`.
 
-Il est **généré** depuis `schema.sql` + `001`→`011` par
+Il est **généré** depuis `schema.sql` + `001`→`012` par
 `supabase/fix/build-alignement.mjs` : aucune dérive possible avec les
 migrations du dépôt. Pour le régénérer :
 
@@ -244,7 +247,7 @@ alignée et l'erreur est impossible à masquer.
 
 ```
 supabase/fix/verification-apres.sql
-sha256  4a0f8f7f632a4b89d6a34c7e9b4491ad552ca0d2e33bb1791869075ff1c00771
+sha256  0675f20a3dda6b4d77cb776c2cc6f32aa9a0c56dec3efd61159515efe506aac9
 ```
 
 Lecture seule. Il affiche un tableau `libelle | etat` et termine par
@@ -254,7 +257,7 @@ Lecture seule. Il affiche un tableau `libelle | etat` et termine par
 
 ```
 supabase/fix/diagnostic-avant.sql
-sha256  f197b2d2d19c8d89eb682e76de95e2492b5669f8e7f0e120bb630e003a8a22e1
+sha256  033d09e9aa1dce4d447618ee705a464ffc5504d70d8367f32c9c9caf1d6dd82a
 ```
 
 Lecture seule, **aucune erreur possible** (`information_schema`, `pg_catalog`,
@@ -303,19 +306,19 @@ l'agent technique `public` (C2).
 
 ### 5.1 Vérificateur du script correctif
 
-`bun run fix:verifier` — **41 contrôles, tous verts** (au 17/11/2026).
+`bun run fix:verifier` — **114 contrôles, tous verts**.
 
-> **Mise à jour du 21/11/2026** — le vérificateur a été étendu à **77
-> contrôles** (contrat transactionnel, persistance après `COMMIT`, variante
-> dry-run, rollback en cas d'anomalie, escalade de privilèges, accès
-> Storage). Le tableau ci-dessous est conservé pour l'historique ; le détail
-> à jour figure dans `docs/CONTRE-AUDIT-SUPABASE.md` §7.1.
+> Les contrôles ajoutés le 21/11 (contrat transactionnel, persistance après
+> `COMMIT`, variante dry-run, rollback en cas d'anomalie, escalade de
+> privilèges, accès Storage) restent actifs : ils font partie du même
+> vérificateur. Détail des contrôles « politiques et privilèges » :
+> `docs/AUDIT-RLS-ALIGNEMENT.md`.
 
 | Bloc | Contrôle | Résultat |
 |---|---|---|
 | Base de départ | `schema.sql` seul = 10 colonnes sur `observations` | OK |
 | Application | `alignement-eco-watch.sql` s'applique sans erreur | OK |
-| **Équivalence** | empreinte du schéma obtenu **identique** à `schema.sql + 001..011` | OK |
+| **Équivalence** | empreinte du schéma obtenu **identique** à `schema.sql + 001..012` | OK |
 | Idempotence | deuxième exécution sans erreur | OK |
 | Données | observation antérieure conservée et complétée (`numero_suivi`, `statut`) | OK |
 | Données | agent antérieur inchangé (`auth_user_id` reste vide) | OK |
@@ -443,13 +446,14 @@ forcément l'une de ces trois-là, à vérifier dans l'ordre :
 |---|---|
 | `supabase/fix/diagnostic-avant.sql` | nouveau — diagnostic lecture seule, tolérant aux objets absents |
 | `supabase/fix/build-alignement.mjs` | nouveau — générateur du script correctif |
-| `supabase/fix/alignement-eco-watch.sql` | nouveau — **généré**, 2191 lignes, transactionnel |
-| `supabase/fix/alignement-eco-watch-dry-run.sql` | nouveau — **généré**, 2196 lignes, simulation `ROLLBACK` |
+| `supabase/fix/alignement-eco-watch.sql` | nouveau — **généré**, 2315 lignes, transactionnel |
+| `supabase/fix/alignement-eco-watch-dry-run.sql` | nouveau — **généré**, simulation `ROLLBACK` |
 | `supabase/fix/verification-apres.sql` | nouveau — contrôle lecture seule après application |
-| `supabase/fix/verifier-alignement.mjs` | nouveau — vérificateur local (77 contrôles) |
+| `supabase/fix/verifier-alignement.mjs` | nouveau — vérificateur local (114 contrôles) |
 | `package.json` | `fix:generer`, `fix:dry-run`, `fix:verifier` |
 | `docs/AUDIT-SYNCHRONISATION-SUPABASE.md` | ce rapport |
-| `docs/CONTRE-AUDIT-SUPABASE.md` | contre-audit du 21/11/2026 (indépendant) |
+| `docs/CONTRE-AUDIT-SUPABASE.md` | contre-audit du 21/11/2026 |
+| `docs/AUDIT-RLS-ALIGNEMENT.md` | audit des politiques RLS et des privilèges |
 
 **Aucune donnée, aucune migration du dépôt, aucune politique existante n'a été
 modifiée.** Les fichiers de `supabase/migrations/` sont intacts : le script
@@ -461,7 +465,7 @@ correctif est *dérivé* d'eux, jamais l'inverse.
 
 | Question | Réponse |
 |---|---|
-| La base est-elle synchronisée avec le dépôt ? | **Non.** Aucune des 11 migrations n'est appliquée. |
+| La base est-elle synchronisée avec le dépôt ? | **Non.** Aucune des 12 migrations n'est appliquée. |
 | Le QR Code peut-il enregistrer un signalement aujourd'hui ? | **Non.** `creer_signalement_public` n'existe pas. |
 | L'administration peut-elle lire les données ? | **Non.** RLS active sans politique. |
 | L'alignement est-il sûr ? | Oui : **transactionnel**, idempotent, sans suppression, sans renommage, avec vérification finale qui annule tout en cas d'écart. |
@@ -469,6 +473,6 @@ correctif est *dérivé* d'eux, jamais l'inverse.
 | Décision recommandée | **GO sous conditions** : sauvegarde + `diagnostic-avant.sql` + `alignement-eco-watch.sql` + `verification-apres.sql` + §4.6 + §6. |
 
 **Décision finale : GO sous conditions.** La base est structurellement en
-retard de 11 migrations ; l'écart est réparable sans perte et sans exposition,
+retard de 12 migrations ; l'écart est réparable sans perte et sans exposition,
 à condition que les deux actions humaines (script + administrateur) soient
 réalisées et contrôlées par le §6.

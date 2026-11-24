@@ -10,6 +10,26 @@ existantes sont conservées.
 
 ## Recently Completed
 
+- [x] **Audit critique RLS et privilèges (24/11/2026)**
+  - Constat SQL Editor : 8 politiques permissives `TO public` avec `true`
+    (`agents_insert`, `agents_read_all`, `agents_update_own`, `notifs_insert`,
+    `notifs_read_all`, `notifs_update`, `obs_insert`, `obs_read_all`).
+    `agents_update_own` permettait `update agents set role='admin'` par `anon`.
+  - Vérifié que `005` les supprime **par nom** et par **balayage générique**
+    (`pg_policies` où `qual` ou `with_check` = `true`), puis repose 13
+    politiques cibles `TO authenticated`.
+  - **Faille indépendante de la RLS découverte** : `authenticated` avait
+    `TRUNCATE` sur les 4 tables → purge totale possible malgré la RLS
+    (vérifié : `truncate` exécute, `nextval` sur les séquences aussi).
+    Corrigé par `supabase/migrations/012_durcissement_privileges.sql`.
+  - `012` : retrait `TRUNCATE`/`REFERENCES`/`TRIGGER`, `revoke all on all
+    sequences`, `current_agent_id()` fermé à `public` et `anon`.
+  - Vérificateur étendu : **114 contrôles** (8 politiques recréées, fuite
+    avant/après, définitions comparées, `TRUNCATE`, séquences, matrice de
+    privilèges). `verification-apres.sql` : §5b (8 politiques), §7b (privilèges).
+  - Rapport : `docs/AUDIT-RLS-ALIGNEMENT.md` — verdict **VALIDÉ SOUS CONDITIONS**.
+  - Tests : typecheck ✅, lint ✅ (1 warning préexistant), build ✅,
+    41 tests unitaires ✅, 94 assertions RLS ✅, 114 contrôles ✅.
 - [x] **Contre-audit des livrables Supabase (21/11/2026)**
   - 7 insuffisances identifiées et corrigées : pas de variante de simulation,
     persistance après `COMMIT` non prouvée, chemin d'échec non testé, escalade
@@ -25,7 +45,8 @@ existantes sont conservées.
   - Vérificateurs confirmés : `typecheck`, `lint`, `build`, `test` (41),
     `test:rls` (94), `fix:verifier` (77).
   - Script d'installation : 2191 lignes,
-    sha256 `c3671a79…`. Simulation : 2196 lignes, sha256 `6bc34b1f…`.
+    sha256 `c3671a79…`. Simulation : 2196 lignes, sha256 `6bc34b1f…`
+    (chiffres au 21/11, avant la migration 012).
   - Verdict : **VALIDÉ POUR EXÉCUTION SUPABASE** (sauvegarde, dry-run,
     installation, `verification-apres.sql`, liaison admin, OTP SMS), **pas**
     prêt pour la production : rien n'a été exécuté sur l'instance réelle.
